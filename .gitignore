@@ -1,3 +1,6 @@
 /Cargo.lock
 /build
+/target
 *.egg-info
+_lib.*.so
+_lib.*.dylib
