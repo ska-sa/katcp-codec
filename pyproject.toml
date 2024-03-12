@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools", "setuptools-rust", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "katcp-codec"
+version = "0.1.0"
+
+[tool.setuptools.packages]
+# Pure Python packages/modules
+find = { where = ["python"] }
+
+[tool.setuptools_scm]
+
+[[tool.setuptools-rust.ext-modules]]
+target = "katcp_codec._lib"
