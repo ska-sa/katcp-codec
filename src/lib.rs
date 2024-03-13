@@ -20,7 +20,7 @@ enum MessageType {
     Inform,
 }
 
-#[pyclass]
+#[pyclass(module="katcp_codec", get_all)]
 struct InvalidMessage {
     error: String,
 }
