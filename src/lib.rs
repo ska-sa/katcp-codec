@@ -342,6 +342,7 @@ impl Parser {
 
 #[pymodule]
 fn _lib(m: Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<MessageType>()?;
     m.add_class::<Message>()?;
     m.add_class::<Parser>()?;
     Ok(())
