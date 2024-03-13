@@ -128,140 +128,167 @@ impl Parser {
         self.error = None;
     }
 
-    /// Append a character (must not be end-of-line)
-    fn add_no_eol(&mut self, ch: u8) {
-        assert!(!is_eol(ch));
-        self.line_length += 1;
-        if self.state != State::Error && self.line_length == self.max_line_length {
-            self.error("Line too long");
-            return;
+    fn add_start(&mut self, ch: u8) {
+        self.message_type = Some(match ch {
+            b' ' | b'\t' => {
+                self.state = State::Empty;
+                return;
+            }
+            b'?' => MessageType::Request,
+            b'!' => MessageType::Reply,
+            b'#' => MessageType::Inform,
+            _ => {
+                self.error("Invalid message type");
+                return;
+            }
+        });
+        self.state = State::BeforeName;
+    }
+
+    fn add_before_name(&mut self, ch: u8) {
+        match ch {
+            b'A'..=b'Z' | b'a'..=b'z' => {
+                self.name.push(ch);
+                self.state = State::Name;
+            }
+            _ => {
+                self.error("Message name started with invalid character");
+            }
         }
-        match self.state {
-            State::Start => {
-                self.message_type = Some(match ch {
-                    b' ' | b'\t' => {
-                        self.state = State::Empty;
-                        return;
-                    }
-                    b'?' => MessageType::Request,
-                    b'!' => MessageType::Reply,
-                    b'#' => MessageType::Inform,
-                    _ => {
-                        self.error("Invalid message type");
-                        return;
-                    }
-                });
-                self.state = State::BeforeName;
+    }
+
+    fn add_name(&mut self, ch: u8) {
+        match ch {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => {
+                self.name.push(ch);
             }
-            State::BeforeName => match ch {
-                b'A'..=b'Z' | b'a'..=b'z' => {
-                    self.name.push(ch);
-                    self.state = State::Name;
-                }
-                _ => {
-                    self.error("Message name started with invalid character");
-                }
-            },
-            State::Name => match ch {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => {
-                    self.name.push(ch);
-                }
-                b' ' | b'\t' => {
-                    self.state = State::BeforeArgument;
-                }
-                b'[' => {
-                    self.state = State::BeforeId;
-                }
-                _ => {
-                    self.error("Message name contains an invalid character");
-                }
-            },
-            State::BeforeId => match ch {
-                b'1'..=b'9' => {
-                    self.id = Some((ch - b'0') as i32);
-                    self.state = State::Id;
-                }
-                _ => {
-                    self.error("Invalid character in message ID");
-                }
-            },
-            State::Id => {
-                let old_id = self.id.unwrap(); // guaranteed to be non-None by state machine
-                match ch {
-                    b'0'..=b'9' => {
-                        let digit = (ch - b'0') as i32;
-                        let new_id = old_id.checked_mul(10).and_then(|x| x.checked_add(digit));
-                        if new_id.is_none() {
-                            self.error("Message ID overflows");
-                        } else {
-                            self.id = new_id;
-                        }
-                    }
-                    b']' => {
-                        self.state = State::AfterId;
-                    }
-                    _ => {
-                        self.error("Invalid character in message ID");
-                    }
-                }
+            b' ' | b'\t' => {
+                self.state = State::BeforeArgument;
             }
-            State::AfterId => match ch {
-                b' ' | b'\t' => {
-                    self.state = State::BeforeArgument;
-                }
-                _ => {
-                    self.error("No whitespace after message ID");
-                }
-            },
-            State::BeforeArgument | State::Argument => {
-                if ch == b' ' || ch == b'\t' {
-                    self.state = State::BeforeArgument;
+            b'[' => {
+                self.state = State::BeforeId;
+            }
+            _ => {
+                self.error("Message name contains an invalid character");
+            }
+        }
+    }
+
+    fn add_before_id(&mut self, ch: u8) {
+        match ch {
+            b'1'..=b'9' => {
+                self.id = Some((ch - b'0') as i32);
+                self.state = State::Id;
+            }
+            _ => {
+                self.error("Invalid character in message ID");
+            }
+        }
+    }
+
+    fn add_id(&mut self, ch: u8) {
+        let old_id = self.id.unwrap(); // guaranteed to be non-None by state machine
+        match ch {
+            b'0'..=b'9' => {
+                let digit = (ch - b'0') as i32;
+                let new_id = old_id.checked_mul(10).and_then(|x| x.checked_add(digit));
+                if new_id.is_none() {
+                    self.error("Message ID overflows");
                 } else {
-                    // If we're moving from BeforeArgument to Argument, create
-                    // the slot for the argument
-                    if self.state == State::BeforeArgument {
-                        self.arguments.push(vec![]);
-                    }
-                    self.state = State::Argument;
-                    match ch {
-                        b'\\' => {
-                            self.state = State::ArgumentEscape;
-                        }
-                        b'\0' | b'\x1B' => {
-                            self.error("Invalid character");
-                        }
-                        _ => {
-                            self.arguments.last_mut().unwrap().push(ch);
-                        }
-                    }
+                    self.id = new_id;
                 }
             }
-            State::ArgumentEscape => {
-                if ch != b'@' {
-                    // \@ is a special case: it's an empty string rather than a char
-                    let escaped = match ch {
-                        b'\\' => b'\\',
-                        b'_' => b' ',
-                        b'0' => b'\0',
-                        b'n' => b'\n',
-                        b'r' => b'\r',
-                        b'e' => b'\x1B',
-                        b't' => b'\t',
-                        _ => {
-                            self.error("Invalid escape sequence");
-                            return;
-                        }
-                    };
-                    self.arguments.last_mut().unwrap().push(escaped);
-                }
-                self.state = State::Argument;
+            b']' => {
+                self.state = State::AfterId;
             }
-            State::Empty => match ch {
+            _ => {
+                self.error("Invalid character in message ID");
+            }
+        }
+    }
+
+    fn add_after_id(&mut self, ch: u8) {
+        match ch {
+            b' ' | b'\t' => {
+                self.state = State::BeforeArgument;
+            }
+            _ => {
+                self.error("No whitespace after message ID");
+            }
+        }
+    }
+
+    /// Append a character in either State::BeforeArgument or State::Argument
+    fn add_argument(&mut self, ch: u8) {
+        if ch == b' ' || ch == b'\t' {
+            self.state = State::BeforeArgument;
+        } else {
+            // If we're moving from BeforeArgument to Argument, create
+            // the slot for the argument.
+            if self.state == State::BeforeArgument {
+                self.arguments.push(vec![]);
+            }
+            self.state = State::Argument;
+            match ch {
+                b'\\' => {
+                    self.state = State::ArgumentEscape;
+                }
+                b'\0' | b'\x1B' => {
+                    self.error("Invalid character");
+                }
+                _ => {
+                    self.arguments.last_mut().unwrap().push(ch);
+                }
+            }
+        }
+    }
+
+    fn add_argument_escape(&mut self, ch: u8) {
+        self.state = State::Argument;
+        let escaped = match ch {
+            b'@' => { return; }  // empty string
+            b'\\' => b'\\',
+            b'_' => b' ',
+            b'0' => b'\0',
+            b'n' => b'\n',
+            b'r' => b'\r',
+            b'e' => b'\x1B',
+            b't' => b'\t',
+            _ => {
+                self.error("Invalid escape sequence");
+                return;
+            }
+        };
+        self.arguments.last_mut().unwrap().push(escaped);
+    }
+
+    fn add_empty(&mut self, ch: u8) {
+        match ch {
                 b' ' | b'\t' => {}
                 _ => {
                     self.error("Line started with whitespace but contains non-whitespace");
                 }
-            },
+        }
+    }
+
+    /// Append a character (must not be end-of-line)
+    fn add_no_eol(&mut self, ch: u8) {
+        assert!(!is_eol(ch));
+        self.line_length += 1;
+        if self.state != State::Error && self.line_length >= self.max_line_length {
+            self.error("Line too long");
+            return;
+        }
+        match self.state {
+            State::Start => { self.add_start(ch); }
+            State::BeforeName => { self.add_before_name(ch); }
+            State::Name => { self.add_name(ch); }
+            State::BeforeId => { self.add_before_id(ch); }
+            State::Id => { self.add_id(ch); }
+            State::AfterId => { self.add_after_id(ch); }
+            State::BeforeArgument | State::Argument => { self.add_argument(ch); }
+            State::ArgumentEscape => { self.add_argument_escape(ch); }
+            State::Empty => { self.add_empty(ch); }
             State::Error => {
                 // Don't need to do anything in error state
             }
