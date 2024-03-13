@@ -250,8 +250,8 @@ impl Parser {
                         }
                     };
                     self.arguments.last_mut().unwrap().push(escaped);
-                    self.state = State::Argument;
                 }
+                self.state = State::Argument;
             }
             State::Empty => match ch {
                 b' ' | b'\t' => {}
