@@ -4,15 +4,18 @@ use pyo3::types::{PyBytes, PyList};
 use std::borrow::Cow;
 use thiserror::Error;
 
-#[pyclass]
+#[pyclass(module="katcp_codec._lib")]
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum MessageType {
+    #[pyo3(name="REQUEST")]
     Request,
+    #[pyo3(name="REPLY")]
     Reply,
+    #[pyo3(name="INFORM")]
     Inform,
 }
 
-#[pyclass(module = "katcp_codec")]
+#[pyclass(module="katcp_codec._lib")]
 pub struct Message {
     #[pyo3(get)]
     pub message_type: MessageType,
@@ -83,7 +86,7 @@ impl ParseError {
     }
 }
 
-#[pyclass]
+#[pyclass(module="katcp_codec._lib")]
 pub struct Parser {
     state: State,
     line_length: usize,
