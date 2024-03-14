@@ -4,18 +4,18 @@ use pyo3::types::{PyBytes, PyList};
 use std::borrow::Cow;
 use thiserror::Error;
 
-#[pyclass(module="katcp_codec._lib")]
+#[pyclass(module = "katcp_codec._lib")]
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum MessageType {
-    #[pyo3(name="REQUEST")]
+    #[pyo3(name = "REQUEST")]
     Request,
-    #[pyo3(name="REPLY")]
+    #[pyo3(name = "REPLY")]
     Reply,
-    #[pyo3(name="INFORM")]
+    #[pyo3(name = "INFORM")]
     Inform,
 }
 
-#[pyclass(module="katcp_codec._lib")]
+#[pyclass(module = "katcp_codec._lib")]
 pub struct Message {
     #[pyo3(get)]
     pub message_type: MessageType,
@@ -82,11 +82,14 @@ pub struct ParseError {
 
 impl ParseError {
     fn new(message: impl Into<String>, position: usize) -> Self {
-        Self { message: message.into(), position }
+        Self {
+            message: message.into(),
+            position,
+        }
     }
 }
 
-#[pyclass(module="katcp_codec._lib")]
+#[pyclass(module = "katcp_codec._lib")]
 pub struct Parser {
     state: State,
     line_length: usize,
@@ -246,7 +249,9 @@ impl Parser {
     fn add_argument_escape(&mut self, ch: u8) {
         self.state = State::Argument;
         let escaped = match ch {
-            b'@' => { return; }  // empty string
+            b'@' => {
+                return;
+            } // empty string
             b'\\' => b'\\',
             b'_' => b' ',
             b'0' => b'\0',
@@ -264,10 +269,10 @@ impl Parser {
 
     fn add_empty(&mut self, ch: u8) {
         match ch {
-                b' ' | b'\t' => {}
-                _ => {
-                    self.error("Line started with whitespace but contains non-whitespace");
-                }
+            b' ' | b'\t' => {}
+            _ => {
+                self.error("Line started with whitespace but contains non-whitespace");
+            }
         }
     }
 
@@ -280,15 +285,33 @@ impl Parser {
             return;
         }
         match self.state {
-            State::Start => { self.add_start(ch); }
-            State::BeforeName => { self.add_before_name(ch); }
-            State::Name => { self.add_name(ch); }
-            State::BeforeId => { self.add_before_id(ch); }
-            State::Id => { self.add_id(ch); }
-            State::AfterId => { self.add_after_id(ch); }
-            State::BeforeArgument | State::Argument => { self.add_argument(ch); }
-            State::ArgumentEscape => { self.add_argument_escape(ch); }
-            State::Empty => { self.add_empty(ch); }
+            State::Start => {
+                self.add_start(ch);
+            }
+            State::BeforeName => {
+                self.add_before_name(ch);
+            }
+            State::Name => {
+                self.add_name(ch);
+            }
+            State::BeforeId => {
+                self.add_before_id(ch);
+            }
+            State::Id => {
+                self.add_id(ch);
+            }
+            State::AfterId => {
+                self.add_after_id(ch);
+            }
+            State::BeforeArgument | State::Argument => {
+                self.add_argument(ch);
+            }
+            State::ArgumentEscape => {
+                self.add_argument_escape(ch);
+            }
+            State::Empty => {
+                self.add_empty(ch);
+            }
             State::Error => {
                 // Don't need to do anything in error state
             }
@@ -349,7 +372,7 @@ impl Parser {
     }
 
     // TODO: support buffer protocol?
-    #[pyo3(name="append")]
+    #[pyo3(name = "append")]
     fn py_append<'py>(
         &mut self,
         py: Python<'py>,
