@@ -25,9 +25,3 @@ class Parser:
     def append(self, data: bytes) -> list[Message | ValueError]:
         raw = self._parser.append(data)
         return [_message_from_raw(msg) for msg in raw]
-
-
-def demo():
-    parser = Parser(100000)
-    msgs = parser.append(b"?hello[2] foo bar\n!response \\@\nbaz")
-    print(msgs)
