@@ -1,4 +1,5 @@
 use enum_map::{enum_map, Enum, EnumMap};
+use once_cell::sync::OnceCell;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
@@ -96,7 +97,7 @@ impl State {
 }
 
 /// Transition action in the state machine
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 enum Action {
     /// No action needed (e.g. skipping whitespace, or an error)
     #[default]
@@ -200,7 +201,7 @@ pub struct Parser {
     id: Option<i32>,
     arguments: Vec<Vec<u8>>,
     error: Option<ParseError>,
-    table: EnumMap<State, EnumMap<u8, Entry>>,
+    table: &'static EnumMap<State, EnumMap<u8, Entry>>,
 }
 
 impl Parser {
@@ -349,24 +350,30 @@ impl Parser {
         }
     }
 
-    pub fn new(max_line_length: usize) -> Self {
-        let mut table = enum_map! {
-            State::Start => Self::make_start(),
-            State::Empty => Self::make_empty(),
-            State::BeforeName => Self::make_before_name(),
-            State::Name => Self::make_name(),
-            State::BeforeId => Self::make_before_id(),
-            State::Id => Self::make_id(),
-            State::AfterId => Self::make_after_id(),
-            State::BeforeArgument => Self::make_argument(true),
-            State::Argument => Self::make_argument(false),
-            State::ArgumentEscape => Self::make_argument_escape(),
-            State::Error => Self::make_table_default(),
-            State::EndOfLine => Self::make_table_default(),
-            State::ErrorEndOfLine => Self::make_table_default(),
-        };
-        Self::build_fast_tables(&mut table);
+    fn parser_table() -> &'static EnumMap<State, EnumMap<u8, Entry>> {
+        static INSTANCE: OnceCell<EnumMap<State, EnumMap<u8, Entry>>> = OnceCell::new();
+        INSTANCE.get_or_init(|| {
+            let mut table = enum_map! {
+                State::Start => Self::make_start(),
+                State::Empty => Self::make_empty(),
+                State::BeforeName => Self::make_before_name(),
+                State::Name => Self::make_name(),
+                State::BeforeId => Self::make_before_id(),
+                State::Id => Self::make_id(),
+                State::AfterId => Self::make_after_id(),
+                State::BeforeArgument => Self::make_argument(true),
+                State::Argument => Self::make_argument(false),
+                State::ArgumentEscape => Self::make_argument_escape(),
+                State::Error => Self::make_table_default(),
+                State::EndOfLine => Self::make_table_default(),
+                State::ErrorEndOfLine => Self::make_table_default(),
+            };
+            Self::build_fast_tables(&mut table);
+            table
+        })
+    }
 
+    pub fn new(max_line_length: usize) -> Self {
         Self {
             state: State::Start,
             line_length: 0,
@@ -376,7 +383,7 @@ impl Parser {
             id: None,
             arguments: vec![],
             error: None,
-            table,
+            table: Self::parser_table(),
         }
     }
 
@@ -396,10 +403,10 @@ impl Parser {
         self.error = None;
     }
 
-    fn apply(&mut self, action: Action, chunk: &[u8]) -> Result<Option<Message>, ParseError> {
+    fn apply(&mut self, action: &Action, chunk: &[u8]) -> Result<Option<Message>, ParseError> {
         match action {
             Action::SetType(message_type) => {
-                self.message_type = Some(message_type);
+                self.message_type = Some(*message_type);
             }
             Action::Name => {
                 self.name.extend_from_slice(chunk);
@@ -422,7 +429,7 @@ impl Parser {
                 self.arguments.last_mut().unwrap().extend_from_slice(chunk);
             }
             Action::ArgumentEscaped(c) => {
-                self.arguments.last_mut().unwrap().push(c);
+                self.arguments.last_mut().unwrap().push(*c);
             }
             Action::ResetLineLength => {
                 self.line_length = 0;
@@ -486,7 +493,7 @@ impl Parser {
             }
 
             let tail = &data[p..];
-            match self.apply(entry.action, &data[..p]) {
+            match self.apply(&entry.action, &data[..p]) {
                 Ok(None) => {}
                 Ok(Some(msg)) => {
                     return (Some(Ok(msg)), tail);
