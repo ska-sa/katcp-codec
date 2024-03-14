@@ -1,3 +1,4 @@
+use enum_map::{enum_map, Enum, EnumMap};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
@@ -5,7 +6,7 @@ use std::borrow::Cow;
 use thiserror::Error;
 
 #[pyclass(module = "katcp_codec._lib")]
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum MessageType {
     #[pyo3(name = "REQUEST")]
     Request,
@@ -54,23 +55,93 @@ impl Message {
     }
 }
 
-fn is_eol(ch: u8) -> bool {
-    ch == b'\n' || ch == b'\r'
+/// State in the state machine
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Enum)]
+enum State {
+    /// Initial state
+    Start,
+    /// Seen whitespace, so this can only legally be a blank line
+    Empty,
+    /// Seen the type, haven't started the name
+    BeforeName,
+    /// Middle of the name
+    Name,
+    /// After [ in message ID
+    BeforeId,
+    /// Middle of the message ID
+    Id,
+    /// After the ] terminating the message ID
+    AfterId,
+    /// Seen some whitespace, haven't started the next argument yet
+    BeforeArgument,
+    /// Middle of an argument, not following a backslash
+    Argument,
+    /// Seen a backslash in an argument
+    ArgumentEscape,
+    /// Invalid character seen, waiting for the end-of-line
+    #[default]
+    Error,
+    /// Terminal state for a valid line
+    EndOfLine,
+    /// Terminal state for an invalid line
+    ErrorEndOfLine,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-enum State {
-    Start,          // Initial state
-    Empty,          // Seen whitespace, so this can only legally be a blank line
-    BeforeName,     // Seen the type, haven't started the name
-    Name,           // Middle of the name
-    BeforeId,       // After [ in message ID
-    Id,             // Middle of the message ID
-    AfterId,        // After the ] terminating the message ID
-    BeforeArgument, // Seen some whitespace, haven't started the next argument yet
-    Argument,       // Middle of an argument, not following a backslash
-    ArgumentEscape, // Seen a backslash in an argument
-    Error,          // Invalid character seen, waiting for the end-of-line
+/// Transition action in the state machine
+#[derive(Copy, Clone, Default)]
+enum Action {
+    /// Set the message type
+    SetType(MessageType),
+    /// Append the current character to the name
+    Name,
+    /// Append a digit to the message ID
+    Id,
+    /// Append the current character to the argument
+    Argument,
+    /// Append a specific character to the argument
+    ArgumentEscaped(u8),
+    /// Set line_length back to 0 (after empty message)
+    ResetLineLength,
+    /// No action needed (e.g. skipping whitespace, or an error)
+    #[default]
+    Nothing,
+}
+
+/// (state, char) entry in the state machine
+#[derive(Copy, Clone, Default)]
+struct Entry {
+    /// Action to apply
+    action: Action,
+    /// Next state
+    state: State,
+    /// Whether to create a new argument before applying the action
+    create_argument: bool,
+}
+
+impl Entry {
+    fn new(action: Action, state: State) -> Self {
+        Self {
+            action,
+            state,
+            create_argument: false,
+        }
+    }
+
+    fn new_full(action: Action, state: State, create_argument: bool) -> Self {
+        Self {
+            action,
+            state,
+            create_argument,
+        }
+    }
+
+    fn error() -> Self {
+        Self {
+            action: Action::Nothing,
+            state: State::Error,
+            create_argument: false,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -99,9 +170,116 @@ pub struct Parser {
     id: Option<i32>,
     arguments: Vec<Vec<u8>>,
     error: Option<ParseError>,
+    table: EnumMap<State, EnumMap<u8, Entry>>,
 }
 
 impl Parser {
+    fn make_table(callback: impl Fn(u8) -> Entry) -> EnumMap<u8, Entry> {
+        let mut table = EnumMap::default();
+        for ch in 0..=255u8 {
+            table[ch] = callback(ch);
+        }
+        // Simplify the callers by applying some generic rules
+        if table[b'\n'].state == State::Error {
+            table[b'\n'].state = State::ErrorEndOfLine;
+        }
+        assert!(matches!(
+            table[b'\n'].state,
+            State::EndOfLine | State::ErrorEndOfLine | State::Start
+        ));
+        table[b'\t'] = table[b' '];
+        table[b'\r'] = table[b'\n'];
+        table
+    }
+
+    fn make_table_default() -> EnumMap<u8, Entry> {
+        Self::make_table(|_| Entry::error())
+    }
+
+    fn make_start() -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b' ' => Entry::new(Action::Nothing, State::Empty),
+            b'?' => Entry::new(Action::SetType(MessageType::Request), State::BeforeName),
+            b'!' => Entry::new(Action::SetType(MessageType::Reply), State::BeforeName),
+            b'#' => Entry::new(Action::SetType(MessageType::Inform), State::BeforeName),
+            b'\n' => Entry::new(Action::ResetLineLength, State::Start),
+            _ => Entry::error(),
+        })
+    }
+
+    fn make_empty() -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b' ' => Entry::new(Action::Nothing, State::Empty),
+            b'\n' => Entry::new(Action::ResetLineLength, State::Start),
+            _ => Entry::error(),
+        })
+    }
+
+    fn make_before_name() -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b'A'..=b'Z' | b'a'..=b'z' => Entry::new(Action::Name, State::Name),
+            _ => Entry::error(),
+        })
+    }
+
+    fn make_name() -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => Entry::new(Action::Name, State::Name),
+            b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
+            b'[' => Entry::new(Action::Nothing, State::BeforeId),
+            b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
+            _ => Entry::error(),
+        })
+    }
+
+    fn make_before_id() -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b'1'..=b'9' => Entry::new(Action::Id, State::Id),
+            _ => Entry::error(),
+        })
+    }
+
+    fn make_id() -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b'0'..=b'9' => Entry::new(Action::Id, State::Id),
+            b']' => Entry::new(Action::Nothing, State::AfterId),
+            _ => Entry::error(),
+        })
+    }
+
+    fn make_after_id() -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
+            b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
+            _ => Entry::error(),
+        })
+    }
+
+    /// Used for both State::BeforeArgument and State::Argument
+    fn make_argument(create_argument: bool) -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
+            b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
+            b'\\' => Entry::new_full(Action::Nothing, State::ArgumentEscape, create_argument),
+            b'\0' | b'\x1B' => Entry::error(),
+            _ => Entry::new_full(Action::Argument, State::Argument, create_argument),
+        })
+    }
+
+    fn make_argument_escape() -> EnumMap<u8, Entry> {
+        Self::make_table(|ch| match ch {
+            b'@' => Entry::new(Action::Nothing, State::Argument),
+            b'\\' => Entry::new(Action::ArgumentEscaped(b'\\'), State::Argument),
+            b'_' => Entry::new(Action::ArgumentEscaped(b' '), State::Argument),
+            b'0' => Entry::new(Action::ArgumentEscaped(b'\0'), State::Argument),
+            b'n' => Entry::new(Action::ArgumentEscaped(b'\n'), State::Argument),
+            b'r' => Entry::new(Action::ArgumentEscaped(b'\r'), State::Argument),
+            b'e' => Entry::new(Action::ArgumentEscaped(b'\x1B'), State::Argument),
+            b't' => Entry::new(Action::ArgumentEscaped(b'\t'), State::Argument),
+            _ => Entry::error(),
+        })
+    }
+
     pub fn new(max_line_length: usize) -> Self {
         Self {
             state: State::Start,
@@ -112,6 +290,21 @@ impl Parser {
             id: None,
             arguments: vec![],
             error: None,
+            table: enum_map! {
+                State::Start => Self::make_start(),
+                State::Empty => Self::make_empty(),
+                State::BeforeName => Self::make_before_name(),
+                State::Name => Self::make_name(),
+                State::BeforeId => Self::make_before_id(),
+                State::Id => Self::make_id(),
+                State::AfterId => Self::make_after_id(),
+                State::BeforeArgument => Self::make_argument(true),
+                State::Argument => Self::make_argument(false),
+                State::ArgumentEscape => Self::make_argument_escape(),
+                State::Error => Self::make_table_default(),
+                State::EndOfLine => Self::make_table_default(),
+                State::ErrorEndOfLine => Self::make_table_default(),
+            },
         }
     }
 
@@ -131,211 +324,48 @@ impl Parser {
         self.error = None;
     }
 
-    fn add_start(&mut self, ch: u8) {
-        self.message_type = Some(match ch {
-            b' ' | b'\t' => {
-                self.state = State::Empty;
-                return;
-            }
-            b'?' => MessageType::Request,
-            b'!' => MessageType::Reply,
-            b'#' => MessageType::Inform,
-            _ => {
-                self.error("Invalid message type");
-                return;
-            }
-        });
-        self.state = State::BeforeName;
-    }
-
-    fn add_before_name(&mut self, ch: u8) {
-        match ch {
-            b'A'..=b'Z' | b'a'..=b'z' => {
-                self.name.push(ch);
-                self.state = State::Name;
-            }
-            _ => {
-                self.error("Message name started with invalid character");
-            }
-        }
-    }
-
-    fn add_name(&mut self, ch: u8) {
-        match ch {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => {
-                self.name.push(ch);
-            }
-            b' ' | b'\t' => {
-                self.state = State::BeforeArgument;
-            }
-            b'[' => {
-                self.state = State::BeforeId;
-            }
-            _ => {
-                self.error("Message name contains an invalid character");
-            }
-        }
-    }
-
-    fn add_before_id(&mut self, ch: u8) {
-        match ch {
-            b'1'..=b'9' => {
-                self.id = Some((ch - b'0') as i32);
-                self.state = State::Id;
-            }
-            _ => {
-                self.error("Invalid character in message ID");
-            }
-        }
-    }
-
-    fn add_id(&mut self, ch: u8) {
-        let old_id = self.id.unwrap(); // guaranteed to be non-None by state machine
-        match ch {
-            b'0'..=b'9' => {
-                let digit = (ch - b'0') as i32;
-                let new_id = old_id.checked_mul(10).and_then(|x| x.checked_add(digit));
-                if new_id.is_none() {
-                    self.error("Message ID overflows");
-                } else {
-                    self.id = new_id;
-                }
-            }
-            b']' => {
-                self.state = State::AfterId;
-            }
-            _ => {
-                self.error("Invalid character in message ID");
-            }
-        }
-    }
-
-    fn add_after_id(&mut self, ch: u8) {
-        match ch {
-            b' ' | b'\t' => {
-                self.state = State::BeforeArgument;
-            }
-            _ => {
-                self.error("No whitespace after message ID");
-            }
-        }
-    }
-
-    /// Append a character in either State::BeforeArgument or State::Argument
-    fn add_argument(&mut self, ch: u8) {
-        if ch == b' ' || ch == b'\t' {
-            self.state = State::BeforeArgument;
-        } else {
-            // If we're moving from BeforeArgument to Argument, create
-            // the slot for the argument.
-            if self.state == State::BeforeArgument {
-                self.arguments.push(vec![]);
-            }
-            self.state = State::Argument;
-            match ch {
-                b'\\' => {
-                    self.state = State::ArgumentEscape;
-                }
-                b'\0' | b'\x1B' => {
-                    self.error("Invalid character");
-                }
-                _ => {
-                    self.arguments.last_mut().unwrap().push(ch);
-                }
-            }
-        }
-    }
-
-    fn add_argument_escape(&mut self, ch: u8) {
-        self.state = State::Argument;
-        let escaped = match ch {
-            b'@' => {
-                return;
-            } // empty string
-            b'\\' => b'\\',
-            b'_' => b' ',
-            b'0' => b'\0',
-            b'n' => b'\n',
-            b'r' => b'\r',
-            b'e' => b'\x1B',
-            b't' => b'\t',
-            _ => {
-                self.error("Invalid escape sequence");
-                return;
-            }
-        };
-        self.arguments.last_mut().unwrap().push(escaped);
-    }
-
-    fn add_empty(&mut self, ch: u8) {
-        match ch {
-            b' ' | b'\t' => {}
-            _ => {
-                self.error("Line started with whitespace but contains non-whitespace");
-            }
-        }
-    }
-
-    /// Append a character (must not be end-of-line)
-    fn add_no_eol(&mut self, ch: u8) {
-        assert!(!is_eol(ch));
+    /// Append a character
+    fn add(&mut self, ch: u8) -> Result<Option<Message>, ParseError> {
         self.line_length += 1;
         if self.state != State::Error && self.line_length >= self.max_line_length {
             self.error("Line too long");
-            return;
         }
-        match self.state {
-            State::Start => {
-                self.add_start(ch);
-            }
-            State::BeforeName => {
-                self.add_before_name(ch);
-            }
-            State::Name => {
-                self.add_name(ch);
-            }
-            State::BeforeId => {
-                self.add_before_id(ch);
-            }
-            State::Id => {
-                self.add_id(ch);
-            }
-            State::AfterId => {
-                self.add_after_id(ch);
-            }
-            State::BeforeArgument | State::Argument => {
-                self.add_argument(ch);
-            }
-            State::ArgumentEscape => {
-                self.add_argument_escape(ch);
-            }
-            State::Empty => {
-                self.add_empty(ch);
-            }
-            State::Error => {
-                // Don't need to do anything in error state
-            }
+        let entry = &self.table[self.state][ch];
+        self.state = entry.state;
+        if entry.create_argument {
+            self.arguments.push(vec![]);
         }
-    }
+        match entry.action {
+            Action::SetType(message_type) => {
+                self.message_type = Some(message_type);
+            }
+            Action::Name => {
+                self.name.push(ch);
+            }
+            Action::Id => {
+                // Compute the update in 64-bit to detect overflow at the end
+                let id = self.id.unwrap_or(0) as i64;
+                let id = id * 10 + ((ch - b'0') as i64);
+                if let Ok(value) = i32::try_from(id) {
+                    self.id = Some(value);
+                } else {
+                    self.error("Message ID overflowed");
+                }
+            }
+            Action::Argument => {
+                self.arguments.last_mut().unwrap().push(ch);
+            }
+            Action::ArgumentEscaped(c) => {
+                self.arguments.last_mut().unwrap().push(c);
+            }
+            Action::ResetLineLength => {
+                self.line_length = 0;
+            }
+            Action::Nothing => {}
+        }
 
-    /// Complete parsing a line and return the message
-    fn add_eol(&mut self) -> Result<Option<Message>, ParseError> {
         match self.state {
-            State::Start | State::Empty => {
-                self.reset();
-                return Ok(None);
-            }
-            State::BeforeName => {
-                self.error("End of line before message name");
-            }
-            State::BeforeId | State::Id => {
-                self.error("End of line in message ID");
-            }
-            State::ArgumentEscape => {
-                self.error("End of line in middle of escape sequence");
-            }
-            State::Name | State::AfterId | State::BeforeArgument | State::Argument => {
-                // All of these are valid terminal states
+            State::EndOfLine => {
                 let msg = Message::new(
                     self.message_type.take().unwrap(),
                     std::mem::take(&mut self.name),
@@ -343,23 +373,14 @@ impl Parser {
                     std::mem::take(&mut self.arguments),
                 );
                 self.reset();
-                return Ok(Some(msg));
+                Ok(Some(msg))
             }
-            State::Error => {}
-        }
-        // If we get here, we had an error
-        assert!(self.state == State::Error);
-        let error = self.error.take().unwrap();
-        self.reset();
-        Err(error)
-    }
-
-    pub fn add(&mut self, ch: u8) -> Result<Option<Message>, ParseError> {
-        if is_eol(ch) {
-            self.add_eol()
-        } else {
-            self.add_no_eol(ch);
-            Ok(None)
+            State::ErrorEndOfLine => {
+                let error = self.error.take().unwrap();
+                self.reset();
+                Err(error)
+            }
+            _ => Ok(None),
         }
     }
 }
