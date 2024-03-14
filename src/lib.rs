@@ -349,7 +349,8 @@ impl Parser {
     }
 
     // TODO: support buffer protocol?
-    fn append<'py>(
+    #[pyo3(name="append")]
+    fn py_append<'py>(
         &mut self,
         py: Python<'py>,
         data: Bound<'py, PyBytes>,
@@ -364,6 +365,18 @@ impl Parser {
                 Err(error) => {
                     out.append(PyValueError::new_err(error.to_string()).into_value(py))?;
                 }
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl Parser {
+    pub fn append(&mut self, data: &[u8]) -> Result<Vec<Message>, ParseError> {
+        let mut out = vec![];
+        for ch in data.iter() {
+            if let Some(msg) = self.add(*ch)? {
+                out.push(msg);
             }
         }
         Ok(out)
