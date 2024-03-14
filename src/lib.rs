@@ -116,31 +116,30 @@ struct Entry {
     state: State,
     /// Whether to create a new argument before applying the action
     create_argument: bool,
+    /// Whether this transition can be merged
+    fast: bool,
 }
 
 impl Entry {
-    fn new(action: Action, state: State) -> Self {
-        Self {
-            action,
-            state,
-            create_argument: false,
-        }
-    }
-
-    fn new_full(action: Action, state: State, create_argument: bool) -> Self {
+    fn new_full(action: Action, state: State, create_argument: bool, fast: bool) -> Self {
         Self {
             action,
             state,
             create_argument,
+            fast,
         }
     }
 
+    fn new(action: Action, state: State) -> Self {
+        Self::new_full(action, state, false, false)
+    }
+
+    fn fast(action: Action, state: State) -> Self {
+        Self::new_full(action, state, false, true)
+    }
+
     fn error() -> Self {
-        Self {
-            action: Action::Nothing,
-            state: State::Error,
-            create_argument: false,
-        }
+        Self::fast(Action::Nothing, State::Error)
     }
 }
 
@@ -157,6 +156,24 @@ impl ParseError {
             message: message.into(),
             position,
         }
+    }
+}
+
+pub struct ParseIterator<'parser, 'data> {
+    parser: &'parser mut Parser,
+    data: &'data [u8],
+}
+
+impl<'parser, 'data> Iterator for ParseIterator<'parser, 'data>
+where
+    'parser: 'data,
+{
+    type Item = Result<Message, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (msg, tail) = self.parser.next_message(self.data);
+        self.data = tail;
+        msg
     }
 }
 
@@ -217,14 +234,16 @@ impl Parser {
 
     fn make_before_name() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
-            b'A'..=b'Z' | b'a'..=b'z' => Entry::new(Action::Name, State::Name),
+            b'A'..=b'Z' | b'a'..=b'z' => Entry::fast(Action::Name, State::Name),
             _ => Entry::error(),
         })
     }
 
     fn make_name() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => Entry::new(Action::Name, State::Name),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => {
+                Entry::fast(Action::Name, State::Name)
+            }
             b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
             b'[' => Entry::new(Action::Nothing, State::BeforeId),
             b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
@@ -234,14 +253,14 @@ impl Parser {
 
     fn make_before_id() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
-            b'1'..=b'9' => Entry::new(Action::Id, State::Id),
+            b'1'..=b'9' => Entry::fast(Action::Id, State::Id),
             _ => Entry::error(),
         })
     }
 
     fn make_id() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
-            b'0'..=b'9' => Entry::new(Action::Id, State::Id),
+            b'0'..=b'9' => Entry::fast(Action::Id, State::Id),
             b']' => Entry::new(Action::Nothing, State::AfterId),
             _ => Entry::error(),
         })
@@ -260,9 +279,14 @@ impl Parser {
         Self::make_table(|ch| match ch {
             b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
             b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
-            b'\\' => Entry::new_full(Action::Nothing, State::ArgumentEscape, create_argument),
+            b'\\' => Entry::new_full(
+                Action::Nothing,
+                State::ArgumentEscape,
+                create_argument,
+                false,
+            ),
             b'\0' | b'\x1B' => Entry::error(),
-            _ => Entry::new_full(Action::Argument, State::Argument, create_argument),
+            _ => Entry::new_full(Action::Argument, State::Argument, create_argument, true),
         })
     }
 
@@ -324,13 +348,14 @@ impl Parser {
         self.error = None;
     }
 
-    /// Append a character
-    fn add(&mut self, ch: u8) -> Result<Option<Message>, ParseError> {
-        self.line_length += 1;
+    fn add_chunk(&mut self, chunk: &[u8]) -> Result<Option<Message>, ParseError> {
+        self.line_length += chunk.len();
         if self.state != State::Error && self.line_length >= self.max_line_length {
             self.error("Line too long");
+            // Avoid incrementing indefinitely, which could overflow
+            self.line_length = self.max_line_length + 1;
         }
-        let entry = &self.table[self.state][ch];
+        let entry = &self.table[self.state][chunk[0]];
         self.state = entry.state;
         if entry.create_argument {
             self.arguments.push(vec![]);
@@ -340,20 +365,24 @@ impl Parser {
                 self.message_type = Some(message_type);
             }
             Action::Name => {
-                self.name.push(ch);
+                self.name.extend_from_slice(chunk);
             }
             Action::Id => {
-                // Compute the update in 64-bit to detect overflow at the end
-                let id = self.id.unwrap_or(0) as i64;
-                let id = id * 10 + ((ch - b'0') as i64);
-                if let Ok(value) = i32::try_from(id) {
-                    self.id = Some(value);
-                } else {
-                    self.error("Message ID overflowed");
+                // TODO: optimise this using the whole chunk at once
+                for ch in chunk.iter() {
+                    // Compute the update in 64-bit to detect overflow at the end
+                    let id = self.id.unwrap_or(0) as i64;
+                    let id = id * 10 + ((*ch - b'0') as i64);
+                    if let Ok(value) = i32::try_from(id) {
+                        self.id = Some(value);
+                    } else {
+                        self.error("Message ID overflowed");
+                        break;
+                    }
                 }
             }
             Action::Argument => {
-                self.arguments.last_mut().unwrap().push(ch);
+                self.arguments.last_mut().unwrap().extend_from_slice(chunk);
             }
             Action::ArgumentEscaped(c) => {
                 self.arguments.last_mut().unwrap().push(c);
@@ -383,6 +412,61 @@ impl Parser {
             _ => Ok(None),
         }
     }
+
+    /// Consume data until new end-of-line is seen, returning the remainder if any
+    fn next_message<'data>(
+        &mut self,
+        mut data: &'data [u8],
+    ) -> (Option<Result<Message, ParseError>>, &'data [u8]) {
+        while !data.is_empty() {
+            let entry = &self.table[self.state][data[0]];
+
+            // Find a sequence that we can add in one step. First compute a cap.
+            let max_len = if self.line_length > self.max_line_length {
+                data.len() // We're already in the error state
+            } else {
+                std::cmp::min(data.len(), self.max_line_length - self.line_length)
+            };
+
+            let mut p = 1;
+            let fast_row = &self.table[entry.state];
+            if entry.fast {
+                while p < max_len {
+                    if !fast_row[data[p]].fast {
+                        break;
+                    }
+                    p += 1;
+                }
+            }
+
+            let tail = &data[p..];
+            match self.add_chunk(&data[..p]) {
+                Ok(None) => {}
+                Ok(Some(msg)) => {
+                    return (Some(Ok(msg)), tail);
+                }
+                Err(error) => {
+                    return (Some(Err(error)), tail);
+                }
+            }
+            data = tail;
+        }
+        (None, data)
+    }
+
+    #[must_use = "Must consume the returned iterator for anything to happen"]
+    pub fn append<'parser, 'data, D>(
+        &'parser mut self,
+        data: &'data D,
+    ) -> ParseIterator<'parser, 'data>
+    where
+        D: AsRef<[u8]> + ?Sized,
+    {
+        ParseIterator {
+            parser: self,
+            data: data.as_ref(),
+        }
+    }
 }
 
 #[pymethods]
@@ -400,27 +484,14 @@ impl Parser {
         data: Bound<'py, PyBytes>,
     ) -> PyResult<Bound<'py, PyList>> {
         let out = PyList::empty_bound(py);
-        for ch in data.as_bytes().iter() {
-            match self.add(*ch) {
-                Ok(Some(msg)) => {
+        for result in self.append(data.as_bytes()) {
+            match result {
+                Ok(msg) => {
                     out.append(Bound::new(py, msg)?)?;
                 }
-                Ok(None) => {}
                 Err(error) => {
                     out.append(PyValueError::new_err(error.to_string()).into_value(py))?;
                 }
-            }
-        }
-        Ok(out)
-    }
-}
-
-impl Parser {
-    pub fn append(&mut self, data: impl AsRef<[u8]>) -> Result<Vec<Message>, ParseError> {
-        let mut out = vec![];
-        for ch in data.as_ref().iter() {
-            if let Some(msg) = self.add(*ch)? {
-                out.push(msg);
             }
         }
         Ok(out)
