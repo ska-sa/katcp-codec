@@ -81,8 +81,8 @@ pub struct ParseError {
 }
 
 impl ParseError {
-    fn new(message: String, position: usize) -> Self {
-        Self { message, position }
+    fn new(message: impl Into<String>, position: usize) -> Self {
+        Self { message: message.into(), position }
     }
 }
 
@@ -372,9 +372,9 @@ impl Parser {
 }
 
 impl Parser {
-    pub fn append(&mut self, data: &[u8]) -> Result<Vec<Message>, ParseError> {
+    pub fn append(&mut self, data: impl AsRef<[u8]>) -> Result<Vec<Message>, ParseError> {
         let mut out = vec![];
-        for ch in data.iter() {
+        for ch in data.as_ref().iter() {
             if let Some(msg) = self.add(*ch)? {
                 out.push(msg);
             }
