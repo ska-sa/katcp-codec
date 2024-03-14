@@ -3,10 +3,12 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::Arc;
 use thiserror::Error;
 
 #[pyclass(module = "katcp_codec._lib")]
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum MessageType {
     #[pyo3(name = "REQUEST")]
     Request,
@@ -56,7 +58,7 @@ impl Message {
 }
 
 /// State in the state machine
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Enum)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Enum)]
 enum State {
     /// Initial state
     Start,
@@ -87,11 +89,18 @@ enum State {
     ErrorEndOfLine,
 }
 
+impl State {
+    fn is_terminal(&self) -> bool {
+        matches!(self, State::EndOfLine | State::ErrorEndOfLine)
+    }
+}
+
 /// Transition action in the state machine
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 enum Action {
-    /// Set the message type
-    SetType(MessageType),
+    /// No action needed (e.g. skipping whitespace, or an error)
+    #[default]
+    Nothing,
     /// Append the current character to the name
     Name,
     /// Append a digit to the message ID
@@ -100,15 +109,23 @@ enum Action {
     Argument,
     /// Append a specific character to the argument
     ArgumentEscaped(u8),
+    /// Set the message type
+    SetType(MessageType),
     /// Set line_length back to 0 (after empty message)
     ResetLineLength,
-    /// No action needed (e.g. skipping whitespace, or an error)
-    #[default]
-    Nothing,
+}
+
+impl Action {
+    fn is_mergeable(&self) -> bool {
+        matches!(
+            self,
+            Action::Nothing | Action::Name | Action::Id | Action::Argument
+        )
+    }
 }
 
 /// (state, char) entry in the state machine
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default, Eq, PartialEq, Hash)]
 struct Entry {
     /// Action to apply
     action: Action,
@@ -116,30 +133,26 @@ struct Entry {
     state: State,
     /// Whether to create a new argument before applying the action
     create_argument: bool,
-    /// Whether this transition can be merged
-    fast: bool,
+    /// Following characters that can be merged into the action
+    fast_table: Option<Arc<EnumMap<u8, bool>>>,
 }
 
 impl Entry {
-    fn new_full(action: Action, state: State, create_argument: bool, fast: bool) -> Self {
+    fn new_full(action: Action, state: State, create_argument: bool) -> Self {
         Self {
             action,
             state,
             create_argument,
-            fast,
+            fast_table: None,
         }
     }
 
     fn new(action: Action, state: State) -> Self {
-        Self::new_full(action, state, false, false)
-    }
-
-    fn fast(action: Action, state: State) -> Self {
-        Self::new_full(action, state, false, true)
+        Self::new_full(action, state, false)
     }
 
     fn error() -> Self {
-        Self::fast(Action::Nothing, State::Error)
+        Self::new(Action::Nothing, State::Error)
     }
 }
 
@@ -204,8 +217,8 @@ impl Parser {
             table[b'\n'].state,
             State::EndOfLine | State::ErrorEndOfLine | State::Start
         ));
-        table[b'\t'] = table[b' '];
-        table[b'\r'] = table[b'\n'];
+        table[b'\t'] = table[b' '].clone();
+        table[b'\r'] = table[b'\n'].clone();
         table
     }
 
@@ -234,16 +247,14 @@ impl Parser {
 
     fn make_before_name() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
-            b'A'..=b'Z' | b'a'..=b'z' => Entry::fast(Action::Name, State::Name),
+            b'A'..=b'Z' | b'a'..=b'z' => Entry::new(Action::Name, State::Name),
             _ => Entry::error(),
         })
     }
 
     fn make_name() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => {
-                Entry::fast(Action::Name, State::Name)
-            }
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => Entry::new(Action::Name, State::Name),
             b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
             b'[' => Entry::new(Action::Nothing, State::BeforeId),
             b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
@@ -253,14 +264,14 @@ impl Parser {
 
     fn make_before_id() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
-            b'1'..=b'9' => Entry::fast(Action::Id, State::Id),
+            b'1'..=b'9' => Entry::new(Action::Id, State::Id),
             _ => Entry::error(),
         })
     }
 
     fn make_id() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
-            b'0'..=b'9' => Entry::fast(Action::Id, State::Id),
+            b'0'..=b'9' => Entry::new(Action::Id, State::Id),
             b']' => Entry::new(Action::Nothing, State::AfterId),
             _ => Entry::error(),
         })
@@ -279,14 +290,9 @@ impl Parser {
         Self::make_table(|ch| match ch {
             b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
             b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
-            b'\\' => Entry::new_full(
-                Action::Nothing,
-                State::ArgumentEscape,
-                create_argument,
-                false,
-            ),
+            b'\\' => Entry::new_full(Action::Nothing, State::ArgumentEscape, create_argument),
             b'\0' | b'\x1B' => Entry::error(),
-            _ => Entry::new_full(Action::Argument, State::Argument, create_argument, true),
+            _ => Entry::new_full(Action::Argument, State::Argument, create_argument),
         })
     }
 
@@ -304,7 +310,63 @@ impl Parser {
         })
     }
 
+    fn build_fast_tables(table: &mut EnumMap<State, EnumMap<u8, Entry>>) {
+        type ActionDisc = std::mem::Discriminant<Action>;
+
+        let mut cache: HashMap<(State, ActionDisc), Arc<EnumMap<u8, bool>>> = HashMap::new();
+
+        // Rust borrowing rules complicate this looping. We need to mutate
+        // the table, which we can't do if we're borrowing it for iteration.
+        let states: Vec<State> = table
+            .iter()
+            .map(|(state, _)| state)
+            .filter(|state| !state.is_terminal())
+            .collect();
+        for src_state in states {
+            for ch in 0..=255u8 {
+                let entry = &table[src_state][ch];
+                if entry.state.is_terminal() || !entry.action.is_mergeable() {
+                    continue;
+                }
+                let state = entry.state;
+                let key = (state, std::mem::discriminant(&entry.action));
+                // Lifetime of `entry` ends here, leaving `table` accessible
+
+                let fast_table = cache.entry(key).or_insert_with(|| {
+                    let mut result = EnumMap::default();
+                    for ch2 in 0..=255u8 {
+                        let entry = &table[state][ch2];
+                        result[ch2] = entry.state == state
+                            && std::mem::discriminant(&entry.action) == key.1
+                            && !entry.create_argument;
+                    }
+                    Arc::new(result)
+                });
+                if fast_table.values().any(|x| *x) {
+                    table[src_state][ch].fast_table = Some(fast_table.clone());
+                }
+            }
+        }
+    }
+
     pub fn new(max_line_length: usize) -> Self {
+        let mut table = enum_map! {
+            State::Start => Self::make_start(),
+            State::Empty => Self::make_empty(),
+            State::BeforeName => Self::make_before_name(),
+            State::Name => Self::make_name(),
+            State::BeforeId => Self::make_before_id(),
+            State::Id => Self::make_id(),
+            State::AfterId => Self::make_after_id(),
+            State::BeforeArgument => Self::make_argument(true),
+            State::Argument => Self::make_argument(false),
+            State::ArgumentEscape => Self::make_argument_escape(),
+            State::Error => Self::make_table_default(),
+            State::EndOfLine => Self::make_table_default(),
+            State::ErrorEndOfLine => Self::make_table_default(),
+        };
+        Self::build_fast_tables(&mut table);
+
         Self {
             state: State::Start,
             line_length: 0,
@@ -314,21 +376,7 @@ impl Parser {
             id: None,
             arguments: vec![],
             error: None,
-            table: enum_map! {
-                State::Start => Self::make_start(),
-                State::Empty => Self::make_empty(),
-                State::BeforeName => Self::make_before_name(),
-                State::Name => Self::make_name(),
-                State::BeforeId => Self::make_before_id(),
-                State::Id => Self::make_id(),
-                State::AfterId => Self::make_after_id(),
-                State::BeforeArgument => Self::make_argument(true),
-                State::Argument => Self::make_argument(false),
-                State::ArgumentEscape => Self::make_argument_escape(),
-                State::Error => Self::make_table_default(),
-                State::EndOfLine => Self::make_table_default(),
-                State::ErrorEndOfLine => Self::make_table_default(),
-            },
+            table,
         }
     }
 
@@ -348,19 +396,8 @@ impl Parser {
         self.error = None;
     }
 
-    fn add_chunk(&mut self, chunk: &[u8]) -> Result<Option<Message>, ParseError> {
-        self.line_length += chunk.len();
-        if self.state != State::Error && self.line_length >= self.max_line_length {
-            self.error("Line too long");
-            // Avoid incrementing indefinitely, which could overflow
-            self.line_length = self.max_line_length + 1;
-        }
-        let entry = &self.table[self.state][chunk[0]];
-        self.state = entry.state;
-        if entry.create_argument {
-            self.arguments.push(vec![]);
-        }
-        match entry.action {
+    fn apply(&mut self, action: Action, chunk: &[u8]) -> Result<Option<Message>, ParseError> {
+        match action {
             Action::SetType(message_type) => {
                 self.message_type = Some(message_type);
             }
@@ -419,28 +456,37 @@ impl Parser {
         mut data: &'data [u8],
     ) -> (Option<Result<Message, ParseError>>, &'data [u8]) {
         while !data.is_empty() {
+            if self.line_length >= self.max_line_length && self.state != State::Error {
+                self.error("Line too long");
+            }
+
             let entry = &self.table[self.state][data[0]];
+            if entry.create_argument {
+                self.arguments.push(vec![]);
+            }
+            self.state = entry.state;
+            let mut p = 1; // number of bytes we're consuming this round
 
-            // Find a sequence that we can add in one step. First compute a cap.
-            let max_len = if self.line_length > self.max_line_length {
-                data.len() // We're already in the error state
-            } else {
-                std::cmp::min(data.len(), self.max_line_length - self.line_length)
-            };
-
-            let mut p = 1;
-            let fast_row = &self.table[entry.state];
-            if entry.fast {
-                while p < max_len {
-                    if !fast_row[data[p]].fast {
-                        break;
-                    }
+            if let Some(fast_table) = &entry.fast_table {
+                // Find a sequence that we can add in one step. First compute a cap.
+                let max_len = if self.line_length >= self.max_line_length {
+                    data.len() // We're already in the error state
+                } else {
+                    std::cmp::min(data.len(), self.max_line_length - self.line_length)
+                };
+                while p < max_len && fast_table[data[p]] {
                     p += 1;
                 }
             }
 
+            if self.line_length < self.max_line_length {
+                // The max_len calculation guarantees that this won't exceed
+                // max_line_length.
+                self.line_length += p;
+            }
+
             let tail = &data[p..];
-            match self.add_chunk(&data[..p]) {
+            match self.apply(entry.action, &data[..p]) {
                 Ok(None) => {}
                 Ok(Some(msg)) => {
                     return (Some(Ok(msg)), tail);
