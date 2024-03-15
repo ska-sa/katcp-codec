@@ -13,22 +13,19 @@ pub enum MessageType {
     Inform,
 }
 
-#[pyclass(module = "katcp_codec._lib")]
-pub struct Message {
-    #[pyo3(get)]
+pub struct Message<'data> {
     pub message_type: MessageType,
-    pub name: Vec<u8>,
-    #[pyo3(get)]
+    pub name: Cow<'data, [u8]>,
     pub id: Option<i32>,
-    pub arguments: Vec<Vec<u8>>,
+    pub arguments: Vec<Cow<'data, [u8]>>,
 }
 
-impl Message {
+impl<'data> Message<'data> {
     pub fn new(
         message_type: MessageType,
-        name: Vec<u8>,
+        name: Cow<'data, [u8]>,
         id: Option<i32>,
-        arguments: Vec<Vec<u8>>,
+        arguments: Vec<Cow<'data, [u8]>>,
     ) -> Self {
         Self {
             message_type,
@@ -36,18 +33,5 @@ impl Message {
             id,
             arguments,
         }
-    }
-}
-
-#[pymethods]
-impl Message {
-    #[getter]
-    fn get_name(&self) -> Cow<'_, [u8]> {
-        Cow::from(&self.name)
-    }
-
-    #[getter]
-    fn get_arguments(&self) -> Vec<Cow<'_, [u8]>> {
-        self.arguments.iter().map(Cow::from).collect()
     }
 }

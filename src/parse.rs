@@ -3,7 +3,7 @@ use once_cell::sync::OnceCell;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
-
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
@@ -130,19 +130,26 @@ impl ParseError {
 pub struct ParseIterator<'parser, 'data> {
     parser: &'parser mut Parser,
     data: &'data [u8],
+    transient: Transient<'data>,
 }
 
 impl<'parser, 'data> Iterator for ParseIterator<'parser, 'data>
 where
     'parser: 'data,
 {
-    type Item = Result<Message, ParseError>;
+    type Item = Result<Message<'data>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (msg, tail) = self.parser.next_message(self.data);
+        let (msg, tail) = self.parser.next_message(self.data, &mut self.transient);
         self.data = tail;
         msg
     }
+}
+
+/// Parser state that can only live as long as the iterator returned by [Parser::append].
+struct Transient<'data> {
+    name: Cow<'data, [u8]>,
+    arguments: Vec<Cow<'data, [u8]>>,
 }
 
 #[pyclass(module = "katcp_codec._lib")]
@@ -156,6 +163,17 @@ pub struct Parser {
     arguments: Vec<Vec<u8>>,
     error: Option<ParseError>,
     table: &'static EnumMap<State, EnumMap<u8, Entry>>,
+}
+
+/// Extend a Cow<'_, [T]> with new elements.
+///
+/// This is special-cased to borrow the elements if the Cow was empty.
+fn extend_cow<'a>(cow: &mut Cow<'a, [u8]>, elements: &'a [u8]) {
+    if cow.is_empty() {
+        *cow = Cow::from(elements);
+    } else {
+        cow.to_mut().extend_from_slice(elements);
+    }
 }
 
 impl Parser {
@@ -347,7 +365,7 @@ impl Parser {
         self.error = Some(ParseError::new(message.into(), self.line_length + 1));
     }
 
-    fn reset(&mut self) {
+    fn reset(&mut self, transient: &mut Transient<'_>) {
         self.state = State::Start;
         self.line_length = 0;
         self.message_type = None;
@@ -355,15 +373,22 @@ impl Parser {
         self.id = None;
         self.arguments.clear();
         self.error = None;
+        transient.name = Cow::default();
+        transient.arguments.clear();
     }
 
-    fn apply(&mut self, action: &Action, chunk: &[u8]) -> Result<Option<Message>, ParseError> {
+    fn apply<'data>(
+        &mut self,
+        action: &Action,
+        chunk: &'data [u8],
+        transient: &mut Transient<'data>,
+    ) -> Result<Option<Message<'data>>, ParseError> {
         match action {
             Action::SetType(message_type) => {
                 self.message_type = Some(*message_type);
             }
             Action::Name => {
-                self.name.extend_from_slice(chunk);
+                extend_cow(&mut transient.name, chunk);
             }
             Action::Id => {
                 // TODO: optimise this using the whole chunk at once
@@ -380,10 +405,10 @@ impl Parser {
                 }
             }
             Action::Argument => {
-                self.arguments.last_mut().unwrap().extend_from_slice(chunk);
+                extend_cow(transient.arguments.last_mut().unwrap(), chunk);
             }
             Action::ArgumentEscaped(c) => {
-                self.arguments.last_mut().unwrap().push(*c);
+                transient.arguments.last_mut().unwrap().to_mut().push(*c);
             }
             Action::ResetLineLength => {
                 self.line_length = 0;
@@ -400,16 +425,16 @@ impl Parser {
             State::EndOfLine => {
                 let msg = Message::new(
                     self.message_type.take().unwrap(),
-                    std::mem::take(&mut self.name),
+                    std::mem::take(&mut transient.name),
                     self.id,
-                    std::mem::take(&mut self.arguments),
+                    std::mem::take(&mut transient.arguments),
                 );
-                self.reset();
+                self.reset(transient);
                 Ok(Some(msg))
             }
             State::ErrorEndOfLine => {
                 let error = self.error.take().unwrap();
-                self.reset();
+                self.reset(transient);
                 Err(error)
             }
             _ => Ok(None),
@@ -420,7 +445,8 @@ impl Parser {
     fn next_message<'data>(
         &mut self,
         mut data: &'data [u8],
-    ) -> (Option<Result<Message, ParseError>>, &'data [u8]) {
+        transient: &mut Transient<'data>,
+    ) -> (Option<Result<Message<'data>, ParseError>>, &'data [u8]) {
         while !data.is_empty() {
             if self.line_length >= self.max_line_length && self.state != State::Error {
                 self.error("Line too long");
@@ -428,7 +454,7 @@ impl Parser {
 
             let entry = &self.table[self.state][data[0]];
             if entry.create_argument {
-                self.arguments.push(vec![]);
+                transient.arguments.push(Cow::default());
             }
             self.state = entry.state;
             let mut p = 1; // number of bytes we're consuming this round
@@ -445,7 +471,7 @@ impl Parser {
                 }
             }
 
-            let result = self.apply(&entry.action, &data[..p]);
+            let result = self.apply(&entry.action, &data[..p], transient);
 
             if self.line_length < self.max_line_length {
                 // The max_len calculation guarantees that this won't exceed
@@ -464,6 +490,12 @@ impl Parser {
                 }
             }
         }
+        // Return any leftover state to the primary parser state
+        self.name = std::mem::take(&mut transient.name).into_owned();
+        self.arguments = std::mem::take(&mut transient.arguments)
+            .into_iter()
+            .map(|x| x.into_owned())
+            .collect();
         (None, data)
     }
 
@@ -475,9 +507,17 @@ impl Parser {
     where
         D: AsRef<[u8]> + ?Sized,
     {
+        let transient = Transient {
+            name: Cow::from(std::mem::take(&mut self.name)),
+            arguments: std::mem::take(&mut self.arguments)
+                .into_iter()
+                .map(Cow::from)
+                .collect(),
+        };
         ParseIterator {
             parser: self,
             data: data.as_ref(),
+            transient,
         }
     }
 }
@@ -494,13 +534,13 @@ impl Parser {
     fn py_append<'py>(
         &mut self,
         py: Python<'py>,
-        data: Bound<'py, PyBytes>,
+        data: &Bound<'py, PyBytes>,
     ) -> PyResult<Bound<'py, PyList>> {
         let out = PyList::empty_bound(py);
         for result in self.append(data.as_bytes()) {
             match result {
                 Ok(msg) => {
-                    out.append(Bound::new(py, msg)?)?;
+                    out.append(msg)?;
                 }
                 Err(error) => {
                     out.append(PyValueError::new_err(error.to_string()).into_value(py))?;
