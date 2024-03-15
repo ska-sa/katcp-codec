@@ -114,13 +114,15 @@ enum Action {
     SetType(MessageType),
     /// Set line_length back to 0 (after empty message)
     ResetLineLength,
+    /// Set an error message
+    Error,
 }
 
 impl Action {
     fn is_mergeable(&self) -> bool {
         matches!(
             self,
-            Action::Nothing | Action::Name | Action::Id | Action::Argument
+            Action::Nothing | Action::Name | Action::Id | Action::Argument | Action::Error
         )
     }
 }
@@ -153,7 +155,7 @@ impl Entry {
     }
 
     fn error() -> Self {
-        Self::new(Action::Nothing, State::Error)
+        Self::new(Action::Error, State::Error)
     }
 }
 
@@ -223,7 +225,7 @@ impl Parser {
         table
     }
 
-    fn make_table_default() -> EnumMap<u8, Entry> {
+    fn make_error() -> EnumMap<u8, Entry> {
         Self::make_table(|_| Entry::error())
     }
 
@@ -364,9 +366,9 @@ impl Parser {
                 State::BeforeArgument => Self::make_argument(true),
                 State::Argument => Self::make_argument(false),
                 State::ArgumentEscape => Self::make_argument_escape(),
-                State::Error => Self::make_table_default(),
-                State::EndOfLine => Self::make_table_default(),
-                State::ErrorEndOfLine => Self::make_table_default(),
+                State::Error => Self::make_error(),
+                State::EndOfLine => Self::make_error(),
+                State::ErrorEndOfLine => Self::make_error(),
             };
             Self::build_fast_tables(&mut table);
             table
@@ -435,6 +437,11 @@ impl Parser {
                 self.line_length = 0;
             }
             Action::Nothing => {}
+            Action::Error => {
+                if self.error.is_none() {
+                    self.error = Some(ParseError::new("Invalid character", self.line_length));
+                }
+            }
         }
 
         match self.state {
@@ -486,23 +493,24 @@ impl Parser {
                 }
             }
 
+            let result = self.apply(&entry.action, &data[..p]);
+
             if self.line_length < self.max_line_length {
                 // The max_len calculation guarantees that this won't exceed
                 // max_line_length.
                 self.line_length += p;
             }
+            data = &data[p..];
 
-            let tail = &data[p..];
-            match self.apply(&entry.action, &data[..p]) {
+            match result {
                 Ok(None) => {}
                 Ok(Some(msg)) => {
-                    return (Some(Ok(msg)), tail);
+                    return (Some(Ok(msg)), data);
                 }
                 Err(error) => {
-                    return (Some(Err(error)), tail);
+                    return (Some(Err(error)), data);
                 }
             }
-            data = tail;
         }
         (None, data)
     }
