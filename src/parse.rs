@@ -148,7 +148,9 @@ where
 
 /// Parser state that can only live as long as the iterator returned by [Parser::append].
 struct Transient<'data> {
+    /// Name which *replaces [Parser::name]
     name: Cow<'data, [u8]>,
+    /// Arguments to *append* to [Parser::arguments]
     arguments: Vec<Cow<'data, [u8]>>,
 }
 
@@ -423,11 +425,16 @@ impl Parser {
 
         match self.state {
             State::EndOfLine => {
+                let arguments: Vec<_> = std::mem::take(&mut self.arguments)
+                    .into_iter()
+                    .map(Cow::from)
+                    .chain(std::mem::take(&mut transient.arguments))
+                    .collect();
                 let msg = Message::new(
                     self.message_type.take().unwrap(),
                     std::mem::take(&mut transient.name),
                     self.id,
-                    std::mem::take(&mut transient.arguments),
+                    arguments,
                 );
                 self.reset(transient);
                 Ok(Some(msg))
@@ -492,10 +499,11 @@ impl Parser {
         }
         // Return any leftover state to the primary parser state
         self.name = std::mem::take(&mut transient.name).into_owned();
-        self.arguments = std::mem::take(&mut transient.arguments)
-            .into_iter()
-            .map(|x| x.into_owned())
-            .collect();
+        self.arguments.extend(
+            std::mem::take(&mut transient.arguments)
+                .into_iter()
+                .map(|x| x.into_owned()),
+        );
         (None, data)
     }
 
@@ -507,13 +515,15 @@ impl Parser {
     where
         D: AsRef<[u8]> + ?Sized,
     {
-        let transient = Transient {
+        let mut transient = Transient {
             name: Cow::from(std::mem::take(&mut self.name)),
-            arguments: std::mem::take(&mut self.arguments)
-                .into_iter()
-                .map(Cow::from)
-                .collect(),
+            arguments: Default::default(),
         };
+        // If there is at least one argument in the state, transfer the last
+        // one to the Transient so that it can be extended.
+        if let Some(last_arg) = self.arguments.pop() {
+            transient.arguments.push(Cow::from(last_arg));
+        }
         ParseIterator {
             parser: self,
             data: data.as_ref(),
