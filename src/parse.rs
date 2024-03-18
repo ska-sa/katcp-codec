@@ -433,7 +433,7 @@ impl Parser {
             Action::Nothing => {}
             Action::Error => {
                 if self.error.is_none() {
-                    self.error = Some(ParseError::new("Invalid character", self.line_length));
+                    self.error = Some(ParseError::new("Invalid character", self.line_length + 1));
                 }
             }
         }
