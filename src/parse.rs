@@ -376,13 +376,16 @@ impl Parser {
         }
     }
 
-    fn error(&mut self, message: impl Into<String>) {
-        self.state = State::Error;
-        self.arguments.clear(); // Free up memory
-        self.error = Some(ParseError::new(message.into(), self.line_length + 1));
+    /// Number of bytes currently buffered for an incomplete line.
+    ///
+    /// This is capped at [max_line_length], even if a longer (overflowing)
+    /// line is in progress.
+    pub fn buffer_size(&self) -> usize {
+        self.line_length
     }
 
-    fn reset(&mut self, transient: &mut Transient<'_>) {
+    /// Return the parser to its initial state
+    pub fn reset(&mut self) {
         self.state = State::Start;
         self.line_length = 0;
         self.mtype = None;
@@ -390,6 +393,26 @@ impl Parser {
         self.mid = None;
         self.arguments.clear();
         self.error = None;
+    }
+
+    fn error_at(&mut self, transient: &mut Transient, message: impl Into<String>, position: usize) {
+        if self.state != State::ErrorEndOfLine {
+            self.state = State::Error;
+        }
+        if self.error.is_none() {
+            self.error = Some(ParseError::new(message.into(), position));
+        }
+        // Free up some memory early
+        self.arguments.clear();
+        transient.arguments.clear();
+    }
+
+    fn error(&mut self, transient: &mut Transient, message: impl Into<String>) {
+        self.error_at(transient, message, self.line_length + 1);
+    }
+
+    fn reset_transient(&mut self, transient: &mut Transient<'_>) {
+        self.reset();
         transient.name = Cow::default();
         transient.arguments.clear();
     }
@@ -399,6 +422,7 @@ impl Parser {
         action: &Action,
         chunk: &'data [u8],
         transient: &mut Transient<'data>,
+        position: usize,
     ) -> Result<Option<Message<'data>>, ParseError> {
         match action {
             Action::SetType(mtype) => {
@@ -416,7 +440,7 @@ impl Parser {
                     if let Ok(value) = i32::try_from(mid) {
                         self.mid = Some(value);
                     } else {
-                        self.error("Message ID overflowed");
+                        self.error_at(transient, "Message ID overflowed", position);
                         break;
                     }
                 }
@@ -432,9 +456,7 @@ impl Parser {
             }
             Action::Nothing => {}
             Action::Error => {
-                if self.error.is_none() {
-                    self.error = Some(ParseError::new("Invalid character", self.line_length + 1));
-                }
+                self.error_at(transient, "Invalid character", position);
             }
         }
 
@@ -451,12 +473,12 @@ impl Parser {
                     self.mid,
                     arguments,
                 );
-                self.reset(transient);
+                self.reset_transient(transient);
                 Ok(Some(msg))
             }
             State::ErrorEndOfLine => {
                 let error = self.error.take().unwrap();
-                self.reset(transient);
+                self.reset_transient(transient);
                 Err(error)
             }
             _ => Ok(None),
@@ -471,7 +493,7 @@ impl Parser {
     ) -> (Option<Result<Message<'data>, ParseError>>, &'data [u8]) {
         while !data.is_empty() {
             if self.line_length >= self.max_line_length && self.state != State::Error {
-                self.error("Line too long");
+                self.error(transient, "Line too long");
             }
 
             let entry = &self.table[self.state][data[0]];
@@ -493,13 +515,14 @@ impl Parser {
                 }
             }
 
-            let result = self.apply(&entry.action, &data[..p], transient);
-
+            let position = self.line_length + 1;
             if self.line_length < self.max_line_length {
                 // The max_len calculation guarantees that this won't exceed
                 // max_line_length.
                 self.line_length += p;
             }
+
+            let result = self.apply(&entry.action, &data[..p], transient, position);
             data = &data[p..];
 
             match result {
@@ -573,5 +596,15 @@ impl Parser {
             }
         }
         Ok(out)
+    }
+
+    #[pyo3(name = "reset")]
+    fn py_reset(&mut self) {
+        self.reset();
+    }
+
+    #[getter(buffer_size)]
+    fn py_buffer_size(&self) -> usize {
+        self.buffer_size()
     }
 }

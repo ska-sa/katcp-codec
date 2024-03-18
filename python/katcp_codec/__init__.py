@@ -56,3 +56,10 @@ class Parser:
 
     def append(self, data: bytes) -> List[Union[Message, ValueError]]:
         return [_message_from_rust(message) for message in self._parser.append(data)]
+
+    def reset(self) -> None:
+        self._parser.reset()
+
+    @property
+    def buffer_size(self) -> int:
+        return self._parser.buffer_size
