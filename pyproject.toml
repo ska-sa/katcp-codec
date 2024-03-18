@@ -27,7 +27,7 @@ readme = "README.rst"
 requires-python = ">=3.8"
 keywords = ["katcp"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: BSD License",
 ]
 
