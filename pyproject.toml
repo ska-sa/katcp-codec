@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "katcp-codec"
-version = "0.1.0"
+dynamic = ["version"]
 
 [tool.setuptools.packages]
 # Pure Python packages/modules
 find = { where = ["python"] }
 
 [tool.setuptools_scm]
+# This section is needed to have setuptools_scm provide the version
 
 [[tool.setuptools-rust.ext-modules]]
 target = "katcp_codec._lib"
