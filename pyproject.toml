@@ -5,6 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "katcp-codec"
 dynamic = ["version"]
+authors = [{name = "Bruce Merry", email = "bmerry@sarao.ac.za"}]
+description = "Fast encoding and decoding of katcp messages"
+readme = "README.rst"
+requires-python = ">=3.8"
+keywords = ["katcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: BSD License",
+]
+
+[project.urls]
+Homepage = "https://github.com/ska-sa/katcp-codec"
 
 [tool.setuptools.packages]
 # Pure Python packages/modules
