@@ -21,11 +21,11 @@ use std::borrow::Cow;
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum MessageType {
     #[pyo3(name = "REQUEST")]
-    Request,
+    Request = 1,
     #[pyo3(name = "REPLY")]
-    Reply,
+    Reply = 2,
     #[pyo3(name = "INFORM")]
-    Inform,
+    Inform = 3,
 }
 
 pub struct Message<'data> {

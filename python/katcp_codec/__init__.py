@@ -14,4 +14,45 @@
 # limitations under the License.
 ################################################################################
 
-from katcp_codec._lib import MessageType, Message, Parser
+import enum
+from dataclasses import dataclass
+from typing import Optional, List, Union
+
+from . import _lib
+
+
+# Note: the values must correspond to those in message.rs
+class MessageType(enum.Enum):
+    REQUEST = 1
+    REPLY = 2
+    INFORM = 3
+
+
+@dataclass
+class Message:
+    __slots__ = ["message_type", "name", "id", "arguments"]
+
+    message_type: MessageType
+    name: bytes
+    id: Optional[int]
+    arguments: List[bytes]
+
+
+def _message_from_rust(message: Union[_lib.Message, ValueError]) -> Union[Message, ValueError]:
+    if isinstance(message, Exception):
+        return message
+    else:
+        return Message(
+            MessageType(int(message.message_type)),
+            message.name,
+            message.id,
+            message.arguments
+        )
+
+
+class Parser:
+    def __init__(self, max_line_length: int) -> None:
+        self._parser = _lib.Parser(max_line_length)
+
+    def append(self, data: bytes) -> List[Union[Message, ValueError]]:
+        return [_message_from_rust(message) for message in self._parser.append(data)]
