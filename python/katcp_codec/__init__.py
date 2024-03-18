@@ -30,11 +30,11 @@ class MessageType(enum.Enum):
 
 @dataclass
 class Message:
-    __slots__ = ["message_type", "name", "id", "arguments"]
+    __slots__ = ["mtype", "name", "mid", "arguments"]
 
-    message_type: MessageType
+    mtype: MessageType
     name: bytes
-    id: Optional[int]
+    mid: Optional[int]
     arguments: List[bytes]
 
 
@@ -43,9 +43,9 @@ def _message_from_rust(message: Union[_lib.Message, ValueError]) -> Union[Messag
         return message
     else:
         return Message(
-            MessageType(int(message.message_type)),
+            MessageType(int(message.mtype)),
             message.name,
-            message.id,
+            message.mid,
             message.arguments
         )
 

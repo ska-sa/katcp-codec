@@ -174,9 +174,9 @@ pub struct Parser {
     state: State,
     line_length: usize,
     max_line_length: usize,
-    message_type: Option<MessageType>,
+    mtype: Option<MessageType>,
     name: Vec<u8>,
-    id: Option<i32>,
+    mid: Option<i32>,
     arguments: Vec<Vec<u8>>,
     error: Option<ParseError>,
     table: &'static EnumMap<State, EnumMap<u8, Entry>>,
@@ -367,9 +367,9 @@ impl Parser {
             state: State::Start,
             line_length: 0,
             max_line_length,
-            message_type: None,
+            mtype: None,
             name: vec![],
-            id: None,
+            mid: None,
             arguments: vec![],
             error: None,
             table: Self::parser_table(),
@@ -385,9 +385,9 @@ impl Parser {
     fn reset(&mut self, transient: &mut Transient<'_>) {
         self.state = State::Start;
         self.line_length = 0;
-        self.message_type = None;
+        self.mtype = None;
         self.name.clear();
-        self.id = None;
+        self.mid = None;
         self.arguments.clear();
         self.error = None;
         transient.name = Cow::default();
@@ -401,8 +401,8 @@ impl Parser {
         transient: &mut Transient<'data>,
     ) -> Result<Option<Message<'data>>, ParseError> {
         match action {
-            Action::SetType(message_type) => {
-                self.message_type = Some(*message_type);
+            Action::SetType(mtype) => {
+                self.mtype = Some(*mtype);
             }
             Action::Name => {
                 extend_cow(&mut transient.name, chunk);
@@ -411,10 +411,10 @@ impl Parser {
                 // TODO: optimise this using the whole chunk at once
                 for ch in chunk.iter() {
                     // Compute the update in 64-bit to detect overflow at the end
-                    let id = self.id.unwrap_or(0) as i64;
-                    let id = id * 10 + ((*ch - b'0') as i64);
-                    if let Ok(value) = i32::try_from(id) {
-                        self.id = Some(value);
+                    let mid = self.mid.unwrap_or(0) as i64;
+                    let mid = mid * 10 + ((*ch - b'0') as i64);
+                    if let Ok(value) = i32::try_from(mid) {
+                        self.mid = Some(value);
                     } else {
                         self.error("Message ID overflowed");
                         break;
@@ -446,9 +446,9 @@ impl Parser {
                     .chain(std::mem::take(&mut transient.arguments))
                     .collect();
                 let msg = Message::new(
-                    self.message_type.take().unwrap(),
+                    self.mtype.take().unwrap(),
                     std::mem::take(&mut transient.name),
-                    self.id,
+                    self.mid,
                     arguments,
                 );
                 self.reset(transient);
