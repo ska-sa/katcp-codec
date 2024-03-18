@@ -43,3 +43,4 @@ find = { where = ["python"] }
 
 [[tool.setuptools-rust.ext-modules]]
 target = "katcp_codec._lib"
+debug = false
