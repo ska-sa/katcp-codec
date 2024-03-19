@@ -14,46 +14,9 @@
  */
 
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList};
 
-use crate::message::{Message, MessageType};
+use crate::message::{MessageType, PyMessage};
 use crate::parse::Parser;
-
-#[pyclass(name = "Message", module = "katcp_codec._lib", get_all)]
-pub struct PyMessage {
-    pub mtype: MessageType,
-    pub name: Py<PyBytes>,
-    pub mid: Option<i32>,
-    pub arguments: Py<PyList>,
-}
-
-impl PyMessage {
-    pub fn new(
-        mtype: MessageType,
-        name: Py<PyBytes>,
-        mid: Option<i32>,
-        arguments: Py<PyList>,
-    ) -> Self {
-        Self {
-            mtype,
-            name,
-            mid,
-            arguments,
-        }
-    }
-}
-
-impl<'data> ToPyObject for Message<'data> {
-    fn to_object(&self, py: Python<'_>) -> PyObject {
-        let py_msg = PyMessage::new(
-            self.mtype,
-            PyBytes::new_bound(py, &self.name).unbind(),
-            self.mid,
-            PyList::new_bound(py, self.arguments.iter()).unbind(),
-        );
-        py_msg.into_py(py)
-    }
-}
 
 #[pymodule]
 fn _lib(m: Bound<'_, PyModule>) -> PyResult<()> {
