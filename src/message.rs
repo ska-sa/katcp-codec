@@ -13,8 +13,10 @@
  * limitations under the License.
  */
 
+use pyo3::gc::PyVisit;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
+use pyo3::PyTraverseError;
 
 use std::borrow::Cow;
 
@@ -55,9 +57,9 @@ impl<'data> Message<'data> {
 #[pyclass(name = "Message", module = "katcp_codec._lib", get_all)]
 pub struct PyMessage {
     pub mtype: MessageType,
-    pub name: Py<PyBytes>,
+    pub name: Option<Py<PyBytes>>, // Option only to support __clear__
     pub mid: Option<i32>,
-    pub arguments: Py<PyList>,
+    pub arguments: Option<Py<PyList>>, // Option only to support __clear__
 }
 
 impl PyMessage {
@@ -69,10 +71,28 @@ impl PyMessage {
     ) -> Self {
         Self {
             mtype,
-            name,
+            name: Some(name),
             mid,
-            arguments,
+            arguments: Some(arguments),
         }
+    }
+}
+
+#[pymethods]
+impl PyMessage {
+    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+        if let Some(name) = &self.name {
+            visit.call(name)?;
+        }
+        if let Some(arguments) = &self.arguments {
+            visit.call(arguments)?;
+        }
+        Ok(())
+    }
+
+    fn __clear__(&mut self) {
+        self.name = None;
+        self.arguments = None;
     }
 }
 
