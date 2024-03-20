@@ -17,6 +17,17 @@ repos:
     rev: v0.3.3
     hooks:
       - id: ruff
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        # Passing filenames to mypy can do odd things.
+        # pyproject.toml determines the set of files that will actually be checked.
+        pass_filenames: false
+        # The pre-commit hook passes some options, but we set options in pyproject.toml.
+        args: []
+        additional_dependencies:
+          - pytest==8.1.1
   - repo: https://github.com/jazzband/pip-tools
     rev: 7.4.1
     hooks:
