@@ -35,7 +35,7 @@ classifiers = [
 Homepage = "https://github.com/ska-sa/katcp-codec"
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pre-commit", "pytest"]
 
 [tool.setuptools.packages]
 # Pure Python packages/modules
