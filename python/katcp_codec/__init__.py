@@ -16,7 +16,7 @@
 
 import enum
 from dataclasses import dataclass
-from typing import Optional, List, Union
+from typing import List, Optional, Union
 
 from . import _lib
 
@@ -38,7 +38,9 @@ class Message:
     arguments: List[bytes]
 
 
-def _message_from_rust(message: Union[_lib.Message, ValueError]) -> Union[Message, ValueError]:
+def _message_from_rust(
+    message: Union[_lib.Message, ValueError]
+) -> Union[Message, ValueError]:
     if isinstance(message, Exception):
         return message
     else:
@@ -46,7 +48,7 @@ def _message_from_rust(message: Union[_lib.Message, ValueError]) -> Union[Messag
             MessageType(int(message.mtype)),
             message.name,
             message.mid,
-            message.arguments
+            message.arguments,
         )
 
 
