@@ -28,3 +28,6 @@ itoa = "1.0.10"
 once_cell = "1.19.0"
 pyo3 = { version = "0.21.0-beta.0", features = ["gil-refs"] }
 thiserror = "1.0.58"
+
+[dev-dependencies]
+rstest = { version = "0.18.2", default-features = false }

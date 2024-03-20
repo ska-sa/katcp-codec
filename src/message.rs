@@ -29,6 +29,7 @@ pub enum MessageType {
     Inform = 3,
 }
 
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Message<'data> {
     pub mtype: MessageType,
     pub name: Cow<'data, [u8]>,
@@ -39,16 +40,28 @@ pub struct Message<'data> {
 impl<'data> Message<'data> {
     pub fn new(
         mtype: MessageType,
-        name: Cow<'data, [u8]>,
+        name: impl Into<Cow<'data, [u8]>>,
         mid: Option<i32>,
-        arguments: Vec<Cow<'data, [u8]>>,
+        arguments: impl Into<Vec<Cow<'data, [u8]>>>,
     ) -> Self {
         Self {
             mtype,
-            name,
+            name: name.into(),
             mid,
-            arguments,
+            arguments: arguments.into(),
         }
+    }
+}
+
+#[macro_export]
+macro_rules! msg {
+    ( $mtype:expr, $name:literal, $mid:expr, $($arg:literal),* ) => {
+        $crate::message::Message::new(
+            $mtype,
+            $name.as_slice(),
+            $mid,
+            vec![$( Cow::from($arg.as_slice()) ),*],
+        )
     }
 }
 

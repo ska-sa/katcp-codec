@@ -126,7 +126,7 @@ impl Entry {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Clone, Debug, Eq, PartialEq)]
 #[error("{message:?} at character {position:?}")]
 pub struct ParseError {
     message: String,
@@ -603,5 +603,28 @@ impl Parser {
     #[getter(buffer_size)]
     fn py_buffer_size(&self) -> usize {
         self.buffer_size()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::message::MessageType::*;
+    use crate::msg;
+    use rstest::*;
+
+    #[fixture]
+    fn parser() -> Parser {
+        Parser::new(1000)
+    }
+
+    #[rstest]
+    #[case(
+        b"?test simple\n",
+        msg!(Request, b"test", None, b"simple"),
+    )]
+    fn test_simple(#[case] input: &[u8], #[case] message: Message, mut parser: Parser) {
+        let messages: Vec<_> = parser.append(input).collect();
+        assert_eq!(messages.as_slice(), &[Ok(message)]);
     }
 }
