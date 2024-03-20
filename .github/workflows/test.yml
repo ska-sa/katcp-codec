@@ -45,4 +45,4 @@ jobs:
       - name: Install package
         run: pip install .
       - name: Run Python tests
-        run: pytest
+        run: pytest -v -ra
