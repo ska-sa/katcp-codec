@@ -28,6 +28,13 @@ class MessageType(enum.Enum):
     INFORM = 3
 
 
+_MESSAGE_TYPE_MAP = {
+    MessageType.REQUEST: _lib.MessageType.REQUEST,
+    MessageType.REPLY: _lib.MessageType.REPLY,
+    MessageType.INFORM: _lib.MessageType.INFORM,
+}
+
+
 @dataclass
 class Message:
     __slots__ = ["mtype", "name", "mid", "arguments"]
@@ -36,6 +43,9 @@ class Message:
     name: bytes
     mid: Optional[int]
     arguments: List[bytes]
+
+    def __bytes__(self) -> bytes:
+        return bytes(_message_to_rust(self))
 
 
 def _message_from_rust(
@@ -50,6 +60,15 @@ def _message_from_rust(
             message.mid,
             message.arguments,
         )
+
+
+def _message_to_rust(message: Message) -> _lib.Message:
+    return _lib.Message(
+        _MESSAGE_TYPE_MAP[message.mtype],
+        message.name,
+        message.mid,
+        message.arguments,
+    )
 
 
 class Parser:

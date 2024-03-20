@@ -579,11 +579,8 @@ impl Parser {
 
     // TODO: support buffer protocol?
     #[pyo3(name = "append")]
-    fn py_append<'py>(
-        &mut self,
-        py: Python<'py>,
-        data: &Bound<'py, PyBytes>,
-    ) -> PyResult<Bound<'py, PyList>> {
+    fn py_append<'py>(&mut self, data: &Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyList>> {
+        let py = data.py();
         let out = PyList::empty_bound(py);
         for result in self.append(data.as_bytes()) {
             match result {

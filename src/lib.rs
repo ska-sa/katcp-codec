@@ -14,5 +14,6 @@
  */
 
 mod binding;
+pub mod format;
 pub mod message;
 pub mod parse;

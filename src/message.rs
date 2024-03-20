@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+use pyo3::exceptions::PyValueError;
 use pyo3::gc::PyVisit;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
@@ -20,14 +21,11 @@ use pyo3::PyTraverseError;
 
 use std::borrow::Cow;
 
-#[pyclass(module = "katcp_codec._lib")]
+#[pyclass(module = "katcp_codec._lib", rename_all = "SCREAMING_SNAKE_CASE")]
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum MessageType {
-    #[pyo3(name = "REQUEST")]
     Request = 1,
-    #[pyo3(name = "REPLY")]
     Reply = 2,
-    #[pyo3(name = "INFORM")]
     Inform = 3,
 }
 
@@ -80,6 +78,17 @@ impl PyMessage {
 
 #[pymethods]
 impl PyMessage {
+    #[new]
+    #[pyo3(signature = (mtype, name, mid, arguments))]
+    fn py_new<'py>(
+        mtype: MessageType,
+        name: Bound<'py, PyBytes>,
+        mid: Option<i32>,
+        arguments: Bound<'py, PyList>,
+    ) -> Self {
+        Self::new(mtype, name.unbind(), mid, arguments.unbind())
+    }
+
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         if let Some(name) = &self.name {
             visit.call(name)?;
@@ -93,6 +102,31 @@ impl PyMessage {
     fn __clear__(&mut self) {
         self.name = None;
         self.arguments = None;
+    }
+
+    fn __bytes__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let name = self
+            .name
+            .as_ref()
+            .ok_or_else(|| PyValueError::new_err("name is None"))?;
+        let name = name.bind(py);
+        let arguments = self
+            .arguments
+            .as_ref()
+            .ok_or_else(|| PyValueError::new_err("name is None"))?;
+        // TODO: this is creating a new vector to hold the arguments.
+        // Can we use a trait to handle directly iterating the PyList?
+        let arguments: Vec<Cow<'py, [u8]>> = arguments.bind(py).extract()?;
+        let message = Message {
+            mtype: self.mtype,
+            name: Cow::from(name.as_bytes()),
+            mid: self.mid,
+            arguments,
+        };
+        PyBytes::new_bound_with(py, message.write_size(), |mut bytes: &mut [u8]| {
+            message.write(&mut bytes).unwrap();
+            Ok(())
+        })
     }
 }
 

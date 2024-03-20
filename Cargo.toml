@@ -24,6 +24,7 @@ crate-type = ["cdylib", "rlib"]  # rlib included just for testing
 
 [dependencies]
 enum-map = "2.7.3"
+itoa = "1.0.10"
 once_cell = "1.19.0"
-pyo3 = "0.21.0-beta.0"
+pyo3 = { version = "0.21.0-beta.0", features = ["gil-refs"] }
 thiserror = "1.0.58"
