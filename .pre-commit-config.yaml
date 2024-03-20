@@ -5,11 +5,11 @@ repos:
       - id: fmt
       - id: clippy
   - repo: https://github.com/psf/black
-    rev: 23.11.0
+    rev: 24.3.0
     hooks:
       - id: black
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.0
+    rev: 5.13.2
     hooks:
       - id: isort
         args: ["--filter-files"]
@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: ruff
   - repo: https://github.com/jazzband/pip-tools
-    rev: 7.3.0
+    rev: 7.4.1
     hooks:
       - id: pip-compile
         language_version: python3.8
