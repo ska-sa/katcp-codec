@@ -48,3 +48,25 @@ jobs:
         run: pip install .
       - name: Run Python tests
         run: pytest -v -ra
+  linux-wheels:
+    needs: [pre-commit, python-tests, rust-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+        python: [cp38, cp39, cp30, cp311, cp312, pp38, pp39, pp310]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+        if: matrix.arch != 'x86_64'
+      - uses: pypa/cibuildwheel@2.17.0
+        env:
+          CIBW_ARCHS: ${{ matrix.arch }}
+          CIBW_BUILD: ${{ matrix.python }}-manylinux*
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel_linux-${{ matrix.arch }}-${{ matrix.python }}
+          path: ./wheelhouse/*.whl
