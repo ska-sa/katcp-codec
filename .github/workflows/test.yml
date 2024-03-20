@@ -62,7 +62,7 @@ jobs:
         with:
           platforms: arm64
         if: matrix.arch != 'x86_64'
-      - uses: pypa/cibuildwheel@2.17.0
+      - uses: pypa/cibuildwheel@v2.17.0
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_BUILD: ${{ matrix.python }}-manylinux*
