@@ -14,6 +14,8 @@ jobs:
         with:
           python-version: '3.8'
           cache: 'pip'
+      - name: Install pre-commit
+        run: pip install -c requirements.txt pre-commit
       - name: Run pre-commit checks
         run: pre-commit run --all-files
   rust-tests:
