@@ -15,6 +15,7 @@
 ################################################################################
 
 import pytest
+
 from katcp_codec import Message, MessageType
 
 

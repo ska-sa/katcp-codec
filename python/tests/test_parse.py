@@ -17,6 +17,7 @@
 from typing import List
 
 import pytest
+
 from katcp_codec import Message, MessageType, Parser
 
 
