@@ -54,7 +54,7 @@ impl<'data> Message<'data> {
     }
 }
 
-#[pyclass(name = "Message", module = "katcp_codec._lib", get_all)]
+#[pyclass(name = "Message", module = "katcp_codec._lib", get_all, set_all)]
 pub struct PyMessage {
     pub mtype: MessageType,
     pub name: Option<Py<PyBytes>>, // Option only to support __clear__
