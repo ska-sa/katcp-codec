@@ -69,7 +69,13 @@ testpaths = "python/tests"
 [tool.cibuildwheel]
 build-frontend = "build"
 test-command = "pip install -r {project}/requirements.txt && pytest -v -ra {project}"
+[tool.cibuildwheel.config-settings]
+"--build-option" = "--py-limited-api=cp38"
 [tool.cibuildwheel.linux]
 environment = "PATH=$HOME/.cargo/bin:$PATH"
 archs = ["aarch64", "x86_64"]
 before-all = ".ci/before_all_linux.sh"
+repair-wheel-command = [
+    "auditwheel repair -w {dest_dir} {wheel}",
+    "pipx run abi3audit --strict --report {wheel}",
+]
