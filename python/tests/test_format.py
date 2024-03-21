@@ -16,7 +16,16 @@
 
 import pytest
 
-from katcp_codec import Message, MessageType
+from katcp_codec import Message, MessageType, _lib
+
+
+@pytest.mark.parametrize("mid", [-1, 0, -(2**31) - 1, 2**31])
+def test_bad_mid(mid: int) -> None:
+    with pytest.raises(OverflowError):
+        Message(MessageType.REQUEST, b"hello", mid, [])
+    # Test the underlying Rust type, to ensure it also protects against this
+    with pytest.raises(OverflowError):
+        _lib.Message(_lib.MessageType.REQUEST, b"hello", mid, [])
 
 
 @pytest.mark.parametrize(

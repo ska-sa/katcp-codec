@@ -44,6 +44,10 @@ class Message:
     mid: Optional[int]
     arguments: List[bytes]
 
+    def __post_init__(self) -> None:
+        if self.mid is not None and not 1 <= self.mid <= 2**31 - 1:
+            raise OverflowError("Message ID must be in the range [1, 2**31 - 1)")
+
     def __bytes__(self) -> bytes:
         return bytes(_message_to_rust(self))
 

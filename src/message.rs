@@ -13,7 +13,9 @@
  * limitations under the License.
  */
 
-use pyo3::exceptions::PyValueError;
+//! The basic katcp message type
+
+use pyo3::exceptions::{PyOverflowError, PyValueError};
 use pyo3::gc::PyVisit;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
@@ -21,6 +23,7 @@ use pyo3::PyTraverseError;
 
 use std::borrow::Cow;
 
+/// Type of katcp message
 #[pyclass(module = "katcp_codec._lib", rename_all = "SCREAMING_SNAKE_CASE")]
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum MessageType {
@@ -29,21 +32,36 @@ pub enum MessageType {
     Inform = 3,
 }
 
+/// A katcp message. The name and arguments can either own their data or
+/// reference existing data from a buffer.
+///
+/// The katcp specification is byte-oriented, so the text fields are \[u8\]
+/// rather than [str]. The name has a restricted character set that ensures
+/// it can be decoded as ASCII (or UTF-8) but the arguments may contain
+/// arbitrary bytes.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Message<'data> {
+    /// Message type
     pub mtype: MessageType,
+    /// Message name
     pub name: Cow<'data, [u8]>,
+    /// Message ID, if present. It must be positive.
     pub mid: Option<i32>,
+    /// Message arguments
     pub arguments: Vec<Cow<'data, [u8]>>,
 }
 
 impl<'data> Message<'data> {
+    /// Create a new message.
+    ///
+    /// Panics if the message ID is given and is not positive.
     pub fn new(
         mtype: MessageType,
         name: impl Into<Cow<'data, [u8]>>,
         mid: Option<i32>,
         arguments: impl Into<Vec<Cow<'data, [u8]>>>,
     ) -> Self {
+        assert!(mid.map_or(true, |x| x > 0));
         Self {
             mtype,
             name: name.into(),
@@ -80,6 +98,7 @@ impl PyMessage {
         mid: Option<i32>,
         arguments: Py<PyList>,
     ) -> Self {
+        assert!(mid.map_or(true, |x| x > 0));
         Self {
             mtype,
             name: Some(name),
@@ -98,8 +117,13 @@ impl PyMessage {
         name: Bound<'py, PyBytes>,
         mid: Option<i32>,
         arguments: Bound<'py, PyList>,
-    ) -> Self {
-        Self::new(mtype, name.unbind(), mid, arguments.unbind())
+    ) -> PyResult<Self> {
+        if mid.map_or(false, |x| x <= 0) {
+            return Err(PyOverflowError::new_err(
+                "Message ID must be None or positive",
+            ));
+        }
+        Ok(Self::new(mtype, name.unbind(), mid, arguments.unbind()))
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
