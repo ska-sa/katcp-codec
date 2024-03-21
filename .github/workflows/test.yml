@@ -65,13 +65,13 @@ jobs:
         with:
           platforms: arm64
         if: matrix.arch != 'x86_64'
-      - uses: dtolnay/rust-toolchain@1.76.0
-      - name: Compute installed Rust version
-        run: echo "RUST_VERSION=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_ENV
+      - id: rust-toolchain
+        uses: dtolnay/rust-toolchain@1.76.0
       - uses: pypa/cibuildwheel@v2.17.0
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_BUILD: ${{ matrix.python }}-manylinux*
+          RUST_VERSION: ${{ steps.rust-toolchain.outputs.name }}
       - uses: actions/upload-artifact@v4
         with:
           name: wheel_linux-${{ matrix.arch }}-${{ matrix.python }}
