@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+#![doc = include_str!("../README.md")]
+
 mod binding;
 pub mod format;
 pub mod message;
