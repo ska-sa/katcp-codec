@@ -15,6 +15,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.76.0
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - name: Install pre-commit
         run: pip install -c requirements.txt pre-commit
       - name: Run pre-commit checks
@@ -31,6 +32,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: Swatinem/rust-cache@v2
       - name: Run Rust tests
         run: cargo test
   python-tests:
@@ -45,6 +47,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Install package
@@ -67,6 +70,7 @@ jobs:
         if: matrix.arch != 'x86_64'
       - id: rust-toolchain
         uses: dtolnay/rust-toolchain@1.76.0
+      - uses: Swatinem/rust-cache@v2
       - uses: pypa/cibuildwheel@v2.17.0
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
