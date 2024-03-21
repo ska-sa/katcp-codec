@@ -73,6 +73,7 @@ test-command = "pip install -r {project}/requirements.txt && pytest -v -ra {proj
 "--build-option" = "--py-limited-api=cp38"
 [tool.cibuildwheel.linux]
 environment = "PATH=$HOME/.cargo/bin:$PATH"
+environment-pass = ["RUST_VERSION"]
 archs = ["aarch64", "x86_64"]
 before-all = ".ci/before_all_linux.sh"
 repair-wheel-command = [
