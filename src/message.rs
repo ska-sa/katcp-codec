@@ -18,10 +18,12 @@
 use pyo3::exceptions::{PyOverflowError, PyValueError};
 use pyo3::gc::PyVisit;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::{PyBytes, PyList};
 use pyo3::PyTraverseError;
 
 use std::borrow::Cow;
+use std::ops::Deref;
 
 /// Type of katcp message
 #[pyclass(module = "katcp_codec._lib", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -153,7 +155,8 @@ impl PyMessage {
             .ok_or_else(|| PyValueError::new_err("name is None"))?;
         // TODO: this is creating a new vector to hold the arguments.
         // Can we use a trait to handle directly iterating the PyList?
-        let arguments: Vec<Cow<'py, [u8]>> = arguments.bind(py).extract()?;
+        let py_arguments: Vec<PyBackedBytes> = arguments.bind(py).extract()?;
+        let arguments: Vec<_> = py_arguments.iter().map(|x| Cow::from(x.deref())).collect();
         let message = Message {
             mtype: self.mtype,
             name: Cow::from(name.as_bytes()),
