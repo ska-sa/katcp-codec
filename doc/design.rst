@@ -65,3 +65,45 @@ EOL
     Carriage return (``\r``) or newline (``\n``)
 \*
     Any byte except for NUL (``\0``) or ESC (``\x1B``)
+
+There are two additional states that are not shown: an error state, and an
+additional error state for immediately after encountering an EOL. Encountering
+any character that is not shown will transition to one of these states.
+
+Acceleration
+------------
+Using a state machine makes it quite straightforward to build up a message
+incrementally. Unfortunately, the initial implementation was quite slow,
+because character of the message are appended to the storage one byte at a
+time. An acceleration mechanism allows the input to be processed in chunks.
+After taking one transition in the state machine, we scan over following
+characters to find a maximal chunk that can be processed in one step. For
+additional transitions to be combined with an initial one, they must:
+
+- go to the same target state;
+
+- take the same action;
+
+- take an action that supports chunks;
+
+- not start a new argument; and
+
+- not go to a terminal state.
+
+To speed up this test, each transition is accompanied by a 256-entry boolean
+table that indicates which characters correspond to transitions satisfying
+these conditions.
+
+Given a complete message as input, this allows the following to be handled in
+a single chunk:
+
+- the message ID
+
+- the name
+
+- each argument.
+
+Additionally, exceeding the maximum message length causes a transition to
+error state, but this is not represented by the state machine. So the code to
+scan for the chunk size has extra logic to stop the chunk if it would cross
+that boundary.
