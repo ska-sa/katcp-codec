@@ -18,7 +18,7 @@ import enum
 from dataclasses import dataclass
 from typing import List, Optional, Union
 
-from . import _lib  # type: ignore
+from . import _lib
 
 
 # Note: the values must correspond to those in message.rs
