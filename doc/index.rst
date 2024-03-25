@@ -10,7 +10,11 @@ Welcome to katcp-codec's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   introduction
+   installation
+   usage
    design
+   Reference <modules>
 
 Indices and tables
 ==================
