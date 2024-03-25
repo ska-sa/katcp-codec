@@ -35,3 +35,8 @@ repos:
         language_version: python3.8
         args: ["--output-file=requirements.txt", "--extra=test", "--strip-extras", "pyproject.toml"]
         files: '^(pyproject\.toml|requirements\.txt)$'
+      - id: pip-compile
+        name: pip-compile doc-requirements
+        language_version: python3.8
+        args: ["--output-file=doc-requirements.txt", "--extra=doc", "--strip-extras", "pyproject.toml"]
+        files: '^(pyproject\.toml|doc-requirements\.txt)$'
