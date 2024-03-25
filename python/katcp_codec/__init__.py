@@ -15,10 +15,13 @@
 ################################################################################
 
 import enum
-from dataclasses import dataclass
+import re
+from dataclasses import InitVar, dataclass, field
 from typing import List, Optional, Union
 
 from . import _lib
+
+_NAME_RE = re.compile(b"[A-Za-z][-A-Za-z0-9]*")
 
 
 # Note: the values must correspond to those in message.rs
@@ -39,8 +42,18 @@ _MESSAGE_TYPE_MAP = {
 
 @dataclass
 class Message:
-    """A katcp message."""
+    """A katcp message.
 
+    Raises
+    ------
+    OverflowError
+        if the message ID is out of range
+    ValueError
+        if the name does not conform to the specification
+    """
+
+    # Python 3.8 doesn't support the `slots=True` parameter to dataclass, so
+    # we have to specify the slots manually.
     __slots__ = ["mtype", "name", "mid", "arguments"]
 
     #: Message type
@@ -51,10 +64,18 @@ class Message:
     mid: Optional[int]
     #: Message arguments
     arguments: List[bytes]
+    #: If false, skip validating the name and message ID. This should only be
+    #: done if they've already been checked, as the behaviour is undefined if
+    #: they're invalid.
+    validate: InitVar[bool] = field(default=True)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, validate: bool) -> None:
+        if not validate:
+            return
         if self.mid is not None and not 1 <= self.mid <= 2**31 - 1:
             raise OverflowError("Message ID must be in the range [1, 2**31 - 1)")
+        if not _NAME_RE.fullmatch(self.name):
+            raise ValueError("Name is invalid")
 
     def __bytes__(self) -> bytes:
         """Convert the message to its wire representation."""

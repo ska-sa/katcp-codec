@@ -28,6 +28,12 @@ def test_bad_mid(mid: int) -> None:
         _lib.Message(_lib.MessageType.REQUEST, b"hello", mid, [])
 
 
+@pytest.mark.parametrize("name", [b"", b"0", b"underscores_not_allowed", b"t\xFF"])
+def test_bad_name(name: bytes) -> None:
+    with pytest.raises(ValueError):
+        Message(MessageType.REQUEST, name, None, [])
+
+
 @pytest.mark.parametrize(
     "message, encoding",
     [
