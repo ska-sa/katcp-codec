@@ -55,7 +55,7 @@ proptest! {
     )
     {
         let message: Message<Vec<u8>, Vec<u8>> = Message::new(mtype, name, mid, arguments);
-        let encoded = message.to_bytes();
+        let encoded = message.to_vec();
         let mut parser = Parser::new(1000000000);
         let decoded: Vec<_> = parser.append(&encoded).collect();
         assert_eq!(decoded.len(), 1);

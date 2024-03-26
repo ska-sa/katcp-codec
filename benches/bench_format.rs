@@ -26,10 +26,10 @@ fn format_no_escape(c: &mut Criterion) {
             Some(12345678),
             vec![b"123.4567890:123.4567890".as_slice(); args],
         );
-        let len = msg.to_bytes().len();
+        let len = msg.to_vec().len();
         group.throughput(Throughput::Bytes(len as u64));
         group.bench_function(BenchmarkId::from_parameter(args), |b| {
-            b.iter(|| msg.to_bytes());
+            b.iter(|| msg.to_vec());
         });
     }
     group.finish();

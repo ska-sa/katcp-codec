@@ -22,6 +22,7 @@ use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::{PyBytes, PyList};
 use pyo3::PyTraverseError;
 use std::borrow::Cow;
+use uninit::prelude::*;
 
 /// Type of katcp message
 #[pyclass(module = "katcp_codec._lib", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -171,8 +172,10 @@ impl PyMessage {
             mid: self.mid,
             arguments,
         };
-        PyBytes::new_bound_with(py, message.write_size(), |mut bytes: &mut [u8]| {
-            message.write(&mut bytes).unwrap();
+        PyBytes::new_bound_with(py, message.write_size(), |bytes: &mut [u8]| {
+            unsafe {
+                message.write_out(bytes.as_out());
+            }
             Ok(())
         })
     }

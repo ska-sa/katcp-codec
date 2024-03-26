@@ -15,7 +15,6 @@
 
 use enum_map::{enum_map, EnumMap};
 use once_cell::sync::OnceCell;
-use std::io::Write;
 use uninit::prelude::*;
 
 use crate::message::{Message, MessageType};
@@ -49,49 +48,6 @@ where
         })
     }
 
-    /// Serialize the message
-    pub fn write<T: Write>(&self, target: &mut T) -> std::io::Result<()> {
-        let symbol = Self::type_symbol(self.mtype);
-        target.write_all(std::slice::from_ref(&symbol))?;
-        target.write_all(self.name.as_ref())?;
-        if let Some(mid) = self.mid {
-            target.write_all(b"[")?;
-            let mut buffer = itoa::Buffer::new();
-            let mid_formatted = buffer.format(mid);
-            target.write_all(mid_formatted.as_bytes())?;
-            target.write_all(b"]")?;
-        }
-        for argument in self.arguments.iter() {
-            let argument = argument.as_ref();
-            target.write_all(b" ")?;
-            if argument.is_empty() {
-                target.write_all(b"\\@")?;
-            }
-            let mut buf = [0u8; 2];
-            for &c in argument.iter() {
-                buf[1] = match c {
-                    b'\r' => b'r',
-                    b'\n' => b'n',
-                    b'\t' => b't',
-                    b'\x1B' => b'e',
-                    b'\0' => b'0',
-                    b'\\' => b'\\',
-                    b' ' => b'_',
-                    _ => b'\0', // Indicate no escaping is needed
-                };
-                if buf[1] == b'\0' {
-                    buf[0] = c;
-                    target.write_all(&buf[..1])?;
-                } else {
-                    buf[0] = b'\\';
-                    target.write_all(&buf[..2])?;
-                }
-            }
-        }
-        target.write_all(b"\n")?;
-        Ok(())
-    }
-
     #[inline]
     #[must_use]
     unsafe fn append_byte(target: Out<[u8]>, value: u8) -> Out<[u8]> {
@@ -109,7 +65,7 @@ where
         suffix
     }
 
-    /// Write the message into a buffer
+    /// Write the message into a buffer.
     ///
     /// # Safety
     ///
@@ -166,7 +122,7 @@ where
         bytes
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_vec(&self) -> Vec<u8> {
         let size = self.write_size();
         let mut vec = Vec::with_capacity(size);
         unsafe {
