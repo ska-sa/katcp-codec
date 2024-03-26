@@ -618,10 +618,28 @@ impl Parser {
 mod test {
     use super::*;
     use crate::message::MessageType::*;
-    use crate::msg;
     use crate::test::text_message_strategy;
     use proptest::prelude::*;
     use rstest::*;
+
+    macro_rules! msg {
+        ( $mtype:expr, $name:literal, $mid:expr ) => {
+            $crate::message::Message::new(
+                $mtype,
+                std::borrow::Cow::from($name.as_slice()),
+                $mid,
+                std::vec![],
+            )
+        };
+        ( $mtype:expr, $name:literal, $mid:expr, $($arg:literal),* $(,)? ) => {
+            $crate::message::Message::new(
+                $mtype,
+                std::borrow::Cow::from($name.as_slice()),
+                $mid,
+                std::vec![$( Cow::from($arg.as_slice()) ),*],
+            )
+        };
+    }
 
     #[fixture]
     fn parser() -> Parser {
