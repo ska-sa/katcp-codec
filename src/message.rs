@@ -21,9 +21,7 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::{PyBytes, PyList};
 use pyo3::PyTraverseError;
-
 use std::borrow::Cow;
-use std::ops::Deref;
 
 /// Type of katcp message
 #[pyclass(module = "katcp_codec._lib", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -42,26 +40,34 @@ pub enum MessageType {
 /// it can be decoded as ASCII (or UTF-8) but the arguments may contain
 /// arbitrary bytes.
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Message<'data> {
+pub struct Message<N, A>
+where
+    N: AsRef<[u8]>,
+    A: AsRef<[u8]>,
+{
     /// Message type
     pub mtype: MessageType,
     /// Message name
-    pub name: Cow<'data, [u8]>,
+    pub name: N,
     /// Message ID, if present. It must be positive.
     pub mid: Option<i32>,
     /// Message arguments
-    pub arguments: Vec<Cow<'data, [u8]>>,
+    pub arguments: Vec<A>,
 }
 
-impl<'data> Message<'data> {
+impl<N, A> Message<N, A>
+where
+    N: AsRef<[u8]>,
+    A: AsRef<[u8]>,
+{
     /// Create a new message.
     ///
     /// Panics if the message ID is given and is not positive.
     pub fn new(
         mtype: MessageType,
-        name: impl Into<Cow<'data, [u8]>>,
+        name: impl Into<N>,
         mid: Option<i32>,
-        arguments: impl Into<Vec<Cow<'data, [u8]>>>,
+        arguments: impl Into<Vec<A>>,
     ) -> Self {
         assert!(mid.map_or(true, |x| x > 0));
         Self {
@@ -154,12 +160,11 @@ impl PyMessage {
             .as_ref()
             .ok_or_else(|| PyValueError::new_err("name is None"))?;
         // TODO: this is creating a new vector to hold the arguments.
-        // Can we use a trait to handle directly iterating the PyList?
-        let py_arguments: Vec<PyBackedBytes> = arguments.bind(py).extract()?;
-        let arguments: Vec<_> = py_arguments.iter().map(|x| Cow::from(x.deref())).collect();
+        // Can we use another trait to handle directly iterating the PyList?
+        let arguments: Vec<PyBackedBytes> = arguments.bind(py).extract()?;
         let message = Message {
             mtype: self.mtype,
-            name: Cow::from(name.as_bytes()),
+            name: name.as_bytes(),
             mid: self.mid,
             arguments,
         };
@@ -170,13 +175,17 @@ impl PyMessage {
     }
 }
 
-impl<'data> ToPyObject for Message<'data> {
+impl<N, A> ToPyObject for Message<N, A>
+where
+    N: AsRef<[u8]>,
+    A: AsRef<[u8]>,
+{
     fn to_object(&self, py: Python<'_>) -> PyObject {
         let py_msg = PyMessage::new(
             self.mtype,
-            PyBytes::new_bound(py, &self.name).unbind(),
+            PyBytes::new_bound(py, self.name.as_ref()).unbind(),
             self.mid,
-            PyList::new_bound(py, self.arguments.iter()).unbind(),
+            PyList::new_bound(py, self.arguments.iter().map(|x| Cow::from(x.as_ref()))).unbind(),
         );
         py_msg.into_py(py)
     }

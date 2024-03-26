@@ -25,6 +25,8 @@ use thiserror::Error;
 
 use crate::message::{Message, MessageType};
 
+type ParsedMessage<'data> = Message<Cow<'data, [u8]>, Cow<'data, [u8]>>;
+
 /// State in the state machine
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Enum)]
 enum State {
@@ -152,7 +154,7 @@ impl<'parser, 'data> Iterator for ParseIterator<'parser, 'data>
 where
     'parser: 'data,
 {
-    type Item = Result<Message<'data>, ParseError>;
+    type Item = Result<ParsedMessage<'data>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let (msg, tail) = self.parser.next_message(self.data, &mut self.transient);
@@ -423,7 +425,7 @@ impl Parser {
         chunk: &'data [u8],
         transient: &mut Transient<'data>,
         position: usize,
-    ) -> Result<Option<Message<'data>>, ParseError> {
+    ) -> Result<Option<ParsedMessage<'data>>, ParseError> {
         match action {
             Action::SetType(mtype) => {
                 self.mtype = Some(*mtype);
@@ -490,7 +492,10 @@ impl Parser {
         &mut self,
         mut data: &'data [u8],
         transient: &mut Transient<'data>,
-    ) -> (Option<Result<Message<'data>, ParseError>>, &'data [u8]) {
+    ) -> (
+        Option<Result<ParsedMessage<'data>, ParseError>>,
+        &'data [u8],
+    ) {
         while !data.is_empty() {
             if self.line_length >= self.max_line_length && self.state != State::Error {
                 self.error(transient, "Line too long");

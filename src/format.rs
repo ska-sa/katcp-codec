@@ -17,7 +17,11 @@ use std::io::Write;
 
 use crate::message::{Message, MessageType};
 
-impl Message<'_> {
+impl<N, A> Message<N, A>
+where
+    N: AsRef<[u8]>,
+    A: AsRef<[u8]>,
+{
     /// Serialize the message
     pub fn write<T: Write>(&self, target: &mut T) -> std::io::Result<()> {
         let type_symbol = match self.mtype {
@@ -26,7 +30,7 @@ impl Message<'_> {
             MessageType::Inform => b'#',
         };
         target.write_all(std::slice::from_ref(&type_symbol))?;
-        target.write_all(&self.name)?;
+        target.write_all(self.name.as_ref())?;
         if let Some(mid) = self.mid {
             target.write_all(b"[")?;
             let mut buffer = itoa::Buffer::new();
@@ -35,6 +39,7 @@ impl Message<'_> {
             target.write_all(b"]")?;
         }
         for argument in self.arguments.iter() {
+            let argument = argument.as_ref();
             target.write_all(b" ")?;
             if argument.is_empty() {
                 target.write_all(b"\\@")?;
@@ -67,13 +72,14 @@ impl Message<'_> {
     /// Get the number of bytes needed by [write].
     pub fn write_size(&self) -> usize {
         // Type symbol, name, spaces and newline
-        let mut bytes = 2 + self.name.len() + self.arguments.len();
+        let mut bytes = 2 + self.name.as_ref().len() + self.arguments.len();
         if let Some(mid) = self.mid {
             let mut buffer = itoa::Buffer::new();
             let mid_formatted = buffer.format(mid);
             bytes += 2 + mid_formatted.len();
         }
         for argument in self.arguments.iter() {
+            let argument = argument.as_ref();
             if argument.is_empty() {
                 bytes += 2; // For the \@
             }
