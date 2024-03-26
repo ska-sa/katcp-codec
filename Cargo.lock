@@ -333,6 +333,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "thiserror",
+ "uninit",
 ]
 
 [[package]]
@@ -886,6 +887,12 @@ name = "unindent"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7de7d73e1754487cb58364ee906a499937a0dfabd86bcb980fa99ec8c8fa2ce"
+
+[[package]]
+name = "uninit"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "359fdaaabedff944f100847f2e0ea88918d8012fe64baf5b54c191ad010168c9"
 
 [[package]]
 name = "wait-timeout"

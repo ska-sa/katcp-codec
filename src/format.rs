@@ -16,7 +16,7 @@
 use enum_map::{enum_map, EnumMap};
 use once_cell::sync::OnceCell;
 use std::io::Write;
-use std::mem::MaybeUninit;
+use uninit::prelude::*;
 
 use crate::message::{Message, MessageType};
 
@@ -94,32 +94,27 @@ where
 
     #[inline]
     #[must_use]
-    unsafe fn append_byte(target: &mut [MaybeUninit<u8>], value: u8) -> &mut [MaybeUninit<u8>] {
-        target[0].write(value);
-        target.get_unchecked_mut(1..)
+    unsafe fn append_byte(target: Out<[u8]>, value: u8) -> Out<[u8]> {
+        let (prefix, suffix) = target.split_at_out(1);
+        prefix.get_unchecked_out(0).write(value);
+        suffix
     }
 
     #[inline]
     #[must_use]
-    unsafe fn append_bytes<'a>(
-        target: &'a mut [MaybeUninit<u8>],
-        values: &[u8],
-    ) -> &'a mut [MaybeUninit<u8>] {
+    fn append_bytes<'a>(target: Out<'a, [u8]>, values: &[u8]) -> Out<'a, [u8]> {
         let len = values.len();
-        std::ptr::copy_nonoverlapping(
-            values.as_ptr(),
-            target.as_mut_ptr() as *mut u8,
-            values.len(),
-        );
-        target.get_unchecked_mut(len..)
+        let (prefix, suffix) = target.split_at_out(len);
+        prefix.copy_from_slice(values);
+        suffix
     }
 
-    /// Write the message into a buffer.
+    /// Write the message into a buffer
     ///
     /// # Safety
     ///
     /// The target must have size of at least [write_size].
-    pub unsafe fn write_unchecked(&self, mut target: &mut [MaybeUninit<u8>]) {
+    pub unsafe fn write_out(&self, mut target: Out<[u8]>) {
         target = Self::append_byte(target, Self::type_symbol(self.mtype));
         target = Self::append_bytes(target, self.name.as_ref());
         if let Some(mid) = self.mid {
@@ -135,20 +130,16 @@ where
             if argument.is_empty() {
                 target = Self::append_bytes(target, b"\\@");
             }
-            let mut pos = 0;
             for &c in argument.iter() {
                 let esc = emap[c];
                 if esc == 0 {
                     // No escaping is needed
-                    target[pos].write(c);
-                    pos += 1;
+                    target = Self::append_byte(target, c);
                 } else {
-                    target[pos].write(b'\\');
-                    target[pos + 1].write(esc);
-                    pos += 2;
+                    target = Self::append_byte(target, b'\\');
+                    target = Self::append_byte(target, esc);
                 }
             }
-            target = &mut target[pos..];
         }
         let _ = Self::append_byte(target, b'\n');
     }
@@ -179,7 +170,7 @@ where
         let size = self.write_size();
         let mut vec = Vec::with_capacity(size);
         unsafe {
-            self.write_unchecked(vec.spare_capacity_mut());
+            self.write_out(vec.get_backing_buffer());
             vec.set_len(size);
         }
         vec
