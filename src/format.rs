@@ -122,6 +122,20 @@ where
         bytes
     }
 
+    pub fn write_size_callback(&self) -> (usize, impl Fn(Out<[u8]>) + '_) {
+        let size = self.write_size();
+        let callback = move |out: Out<[u8]>| {
+            if out.len() != size {
+                panic!("Buffer has the wrong size");
+            }
+            // SAFETY: this lambda captures &self, so the length cannot change.
+            unsafe {
+                self.write_out(out);
+            }
+        };
+        (size, callback)
+    }
+
     pub fn to_vec(&self) -> Vec<u8> {
         let size = self.write_size();
         let mut vec = Vec::with_capacity(size);

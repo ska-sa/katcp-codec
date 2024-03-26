@@ -172,10 +172,9 @@ impl PyMessage {
             mid: self.mid,
             arguments,
         };
-        PyBytes::new_bound_with(py, message.write_size(), |bytes: &mut [u8]| {
-            unsafe {
-                message.write_out(bytes.as_out());
-            }
+        let (size, callback) = message.write_size_callback();
+        PyBytes::new_bound_with(py, size, |bytes: &mut [u8]| {
+            callback(bytes.as_out());
             Ok(())
         })
     }
