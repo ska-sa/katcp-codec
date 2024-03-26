@@ -679,9 +679,34 @@ mod test {
         b"?mid-args[2147483647] foo bar\n",
         msg!(Request, b"mid-args", Some(2147483647), b"foo", b"bar"),
     )]
+    #[case(
+        b" \t\n\r?blank-lines\n\n",
+        msg!(Request, b"blank-lines", None),
+    )]
     fn test_simple(#[case] input: &[u8], #[case] message: ParsedMessage, mut parser: Parser) {
         let messages: Vec<_> = parser.append(input).collect();
         assert_eq!(messages.as_slice(), &[Ok(message)]);
+    }
+
+    #[rstest]
+    #[case(b" ?leading-space\n")]
+    #[case(b"no-message-type\n")]
+    #[case(b"?0\n")]
+    #[case(b"?A_\n")]
+    #[case(b"?A[\n")]
+    #[case(b"?a[1\n")]
+    #[case(b"?a[0]\n")]
+    #[case(b"?a[-1]\n")]
+    #[case(b"?a[2147483648]\n")]
+    #[case(b"?a[10000000000]\n")]
+    #[case(b"?a[1]x\n")]
+    #[case(b"?a \0\n")]
+    #[case(b"?a \x1B\n")]
+    #[case(b"?a \\\n")]
+    #[case(b"?a \\z\n")]
+    fn test_fail(#[case] input: &[u8], mut parser: Parser) {
+        let messages: Vec<_> = parser.append(input).collect();
+        assert!(matches!(messages.as_slice(), &[Err(_)]));
     }
 
     fn split_points_strategy(size: usize) -> impl Strategy<Value = Vec<usize>> {
