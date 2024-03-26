@@ -633,6 +633,34 @@ mod test {
         b"?test simple\n",
         msg!(Request, b"test", None, b"simple"),
     )]
+    #[case(
+        b"!alternate\t\tseparators\t\r",
+        msg!(Reply, b"alternate", None, b"separators"),
+    )]
+    #[case(
+        b"#escapes \\@ \\t \\r \\n \\e \\\\ \\_\n",
+        msg!(Inform, b"escapes", None, b"", b"\t", b"\r", b"\n", b"\x1B", b"\\", b" "),
+    )]
+    #[case(
+        b"?no-args\n",
+        msg!(Request, b"no-args", None),
+    )]
+    #[case(
+        b"?no-args-trailing-spaces \n",
+        msg!(Request, b"no-args-trailing-spaces", None),
+    )]
+    #[case(
+        b"?mid[1234]\n",
+        msg!(Request, b"mid", Some(1234)),
+    )]
+    #[case(
+        b"?mid-trailing-spaces[1234]\t\r",
+        msg!(Request, b"mid-trailing-spaces", Some(1234)),
+    )]
+    #[case(
+        b"?mid-args[2147483647] foo bar\n",
+        msg!(Request, b"mid-args", Some(2147483647), b"foo", b"bar"),
+    )]
     fn test_simple(#[case] input: &[u8], #[case] message: ParsedMessage, mut parser: Parser) {
         let messages: Vec<_> = parser.append(input).collect();
         assert_eq!(messages.as_slice(), &[Ok(message)]);

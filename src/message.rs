@@ -96,14 +96,22 @@ where
 
 #[macro_export]
 macro_rules! msg {
-    ( $mtype:expr, $name:literal, $mid:expr, $($arg:literal),* ) => {
+    ( $mtype:expr, $name:literal, $mid:expr ) => {
         $crate::message::Message::new(
             $mtype,
-            $name.as_slice(),
+            std::borrow::Cow::from($name.as_slice()),
             $mid,
-            vec![$( Cow::from($arg.as_slice()) ),*],
+            std::vec![],
         )
-    }
+    };
+    ( $mtype:expr, $name:literal, $mid:expr, $($arg:literal),* $(,)? ) => {
+        $crate::message::Message::new(
+            $mtype,
+            std::borrow::Cow::from($name.as_slice()),
+            $mid,
+            std::vec![$( Cow::from($arg.as_slice()) ),*],
+        )
+    };
 }
 
 #[pyclass(name = "Message", module = "katcp_codec._lib", get_all, set_all)]
