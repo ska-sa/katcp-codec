@@ -628,7 +628,7 @@ mod test {
         b"?test simple\n",
         msg!(Request, b"test", None, b"simple"),
     )]
-    fn test_simple(#[case] input: &[u8], #[case] message: Message, mut parser: Parser) {
+    fn test_simple(#[case] input: &[u8], #[case] message: ParsedMessage, mut parser: Parser) {
         let messages: Vec<_> = parser.append(input).collect();
         assert_eq!(messages.as_slice(), &[Ok(message)]);
     }
