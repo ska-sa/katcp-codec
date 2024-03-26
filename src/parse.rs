@@ -144,7 +144,10 @@ impl ParseError {
     }
 }
 
-pub struct ParseIterator<'parser, 'data> {
+pub struct ParseIterator<'parser, 'data>
+where
+    'data: 'parser,
+{
     parser: &'parser mut Parser,
     data: &'data [u8],
     transient: Transient<'data>,
@@ -152,7 +155,7 @@ pub struct ParseIterator<'parser, 'data> {
 
 impl<'parser, 'data> Iterator for ParseIterator<'parser, 'data>
 where
-    'parser: 'data,
+    'data: 'parser,
 {
     type Item = Result<ParsedMessage<'data>, ParseError>;
 
@@ -616,6 +619,8 @@ mod test {
     use super::*;
     use crate::message::MessageType::*;
     use crate::msg;
+    use crate::test::text_message_strategy;
+    use proptest::prelude::*;
     use rstest::*;
 
     #[fixture]
@@ -631,5 +636,49 @@ mod test {
     fn test_simple(#[case] input: &[u8], #[case] message: ParsedMessage, mut parser: Parser) {
         let messages: Vec<_> = parser.append(input).collect();
         assert_eq!(messages.as_slice(), &[Ok(message)]);
+    }
+
+    fn split_points_strategy(size: usize) -> impl Strategy<Value = Vec<usize>> {
+        prop::collection::vec(1..(size - 1), 1..10).prop_map(move |mut x| {
+            x.push(0);
+            x.push(size);
+            x.sort();
+            x
+        })
+    }
+
+    /// Strategy that produces a message and some points at which to cut it.
+    fn split_message_strategy() -> impl Strategy<Value = (String, Vec<usize>)> {
+        text_message_strategy().prop_flat_map(|x| {
+            let len = x.as_bytes().len();
+            (Just(x), split_points_strategy(len))
+        })
+    }
+
+    proptest! {
+        /// Test that a variety of valid messages parse successfully
+        #[test]
+        fn success(input in text_message_strategy()) {
+            let mut parser = Parser::new(usize::MAX);
+            let messages: Vec<_> = parser.append(input.as_bytes()).collect();
+            assert!(matches!(messages.as_slice(), &[Ok(_)]));
+        }
+
+        /// Test that splitting a message doesn't change how it is parsed
+        #[test]
+        fn parse_split(input in split_message_strategy(), max_line_length in 1..1000usize) {
+            let (data, splits) = &input;
+            let data = data.as_bytes();
+            let mut parser1 = Parser::new(max_line_length);
+            let messages1: Vec<_> = parser1.append(data).collect();
+
+            let mut parser2 = Parser::new(max_line_length);
+            let mut messages2 = Vec::new();
+            for i in 1..splits.len() {
+                messages2.extend(parser2.append(&data[splits[i - 1]..splits[i]]));
+            }
+
+            assert_eq!(messages1, messages2);
+        }
     }
 }

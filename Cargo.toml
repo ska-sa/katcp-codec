@@ -32,4 +32,5 @@ pyo3 = { version = "0.21.0-beta.0", features = ["extension-module"] }
 thiserror = "1.0.58"
 
 [dev-dependencies]
+proptest = "1.4.0"
 rstest = { version = "0.18.2", default-features = false }
