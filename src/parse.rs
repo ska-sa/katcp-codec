@@ -383,7 +383,7 @@ impl Parser {
 
     /// Number of bytes currently buffered for an incomplete line.
     ///
-    /// This is capped at [max_line_length], even if a longer (overflowing)
+    /// This is capped at `Self::max_line_length`, even if a longer (overflowing)
     /// line is in progress.
     pub fn buffer_size(&self) -> usize {
         self.line_length
