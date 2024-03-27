@@ -60,6 +60,7 @@ enum State {
 }
 
 impl State {
+    /// Whether this state corresponds to an end of line.
     fn is_terminal(&self) -> bool {
         matches!(self, State::EndOfLine | State::ErrorEndOfLine)
     }
@@ -110,6 +111,9 @@ struct Entry {
 }
 
 impl Entry {
+    /// Construct a new entry.
+    ///
+    /// The fast_table is omitted; these are filled in later.
     fn new_full(action: Action, state: State, create_argument: bool) -> Self {
         Self {
             action,
@@ -119,15 +123,18 @@ impl Entry {
         }
     }
 
+    /// Construct a new entry that does not start a new argument.
     fn new(action: Action, state: State) -> Self {
         Self::new_full(action, state, false)
     }
 
+    /// Construct an entry that signals an error.
     fn error() -> Self {
         Self::new(Action::Error, State::Error)
     }
 }
 
+/// Error returned from parsing.
 #[derive(Error, Clone, Debug, Eq, PartialEq)]
 #[error("{message:?} at character {position:?}")]
 pub struct ParseError {
@@ -136,6 +143,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
+    /// Create a new error
     fn new(message: impl Into<String>, position: usize) -> Self {
         Self {
             message: message.into(),
@@ -144,6 +152,7 @@ impl ParseError {
     }
 }
 
+/// Iterator implementation for [Parser::append].
 pub struct ParseIterator<'parser, 'data>
 where
     'data: 'parser,
@@ -168,28 +177,41 @@ where
 
 /// Parser state that can only live as long as the iterator returned by [Parser::append].
 struct Transient<'data> {
-    /// Name which *replaces [Parser::name]
+    /// Name which *replaces* [Parser::name]
     name: Cow<'data, [u8]>,
     /// Arguments to *append* to [Parser::arguments]
     arguments: Vec<Cow<'data, [u8]>>,
 }
 
+/// Message parser.
+///
+/// The parser accepts chunks of data from the wire (which need not be aligned
+/// to message boundaries) and returns whole messages as they are parsed.
 #[pyclass(module = "katcp_codec._lib")]
 pub struct Parser {
+    /// Current state
     state: State,
+    /// Number of characters seen on the current line (claimed to `max_line_length`)
     line_length: usize,
+    /// Configured maximum line length
     max_line_length: usize,
+    /// Message type, or [None] if we haven't parsed it yet
     mtype: Option<MessageType>,
+    /// Name (only allocated if [Parser::append] ends partway through the message)
     name: Vec<u8>,
+    /// Message ID, or [None] if there isn't one or we haven't parsed one yet
     mid: Option<u32>,
+    /// Fully-parsed arguments, excluding those in the current [Transient]
     arguments: Vec<Vec<u8>>,
+    /// Current error, if we are in an error state
     error: Option<ParseError>,
+    /// Cached transition table
     table: &'static EnumMap<State, EnumMap<u8, Entry>>,
 }
 
-/// Extend a Cow<'_, [T]> with new elements.
+/// Extend a `Cow<'_, [T]>` with new elements.
 ///
-/// This is special-cased to borrow the elements if the Cow was empty.
+/// This is special-cased to borrow the elements if the [Cow] was empty.
 fn extend_cow<'a>(cow: &mut Cow<'a, [u8]>, elements: &'a [u8]) {
     if cow.is_empty() {
         *cow = Cow::from(elements);
@@ -199,6 +221,10 @@ fn extend_cow<'a>(cow: &mut Cow<'a, [u8]>, elements: &'a [u8]) {
 }
 
 impl Parser {
+    /// Generic helper for building the transition table for one state.
+    ///
+    /// The callback is invoked for every [u8] value. The rules for `' '`
+    /// and `\n` are copied over those for `\t` and `\r` respectively.
     fn make_table(callback: impl Fn(u8) -> Entry) -> EnumMap<u8, Entry> {
         let mut table = EnumMap::default();
         for ch in 0..=255u8 {
@@ -217,10 +243,12 @@ impl Parser {
         table
     }
 
+    /// Create a transition table for an error state.
     fn make_error() -> EnumMap<u8, Entry> {
         Self::make_table(|_| Entry::error())
     }
 
+    /// Create the transition table for [State::Start].
     fn make_start() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b' ' => Entry::new(Action::Nothing, State::Empty),
@@ -232,6 +260,7 @@ impl Parser {
         })
     }
 
+    /// Create the transition table for [State::Empty].
     fn make_empty() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b' ' => Entry::new(Action::Nothing, State::Empty),
@@ -240,6 +269,7 @@ impl Parser {
         })
     }
 
+    /// Create the transition table for [State::BeforeName].
     fn make_before_name() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b'A'..=b'Z' | b'a'..=b'z' => Entry::new(Action::Name, State::Name),
@@ -247,6 +277,7 @@ impl Parser {
         })
     }
 
+    /// Create the transition table for [State::Name].
     fn make_name() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => Entry::new(Action::Name, State::Name),
@@ -257,6 +288,7 @@ impl Parser {
         })
     }
 
+    /// Create the transition table for [State::BeforeId].
     fn make_before_id() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b'1'..=b'9' => Entry::new(Action::Id, State::Id),
@@ -264,6 +296,7 @@ impl Parser {
         })
     }
 
+    /// Create the transition table for [State::Id].
     fn make_id() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b'0'..=b'9' => Entry::new(Action::Id, State::Id),
@@ -272,6 +305,7 @@ impl Parser {
         })
     }
 
+    /// Create the transition table for [State::AfterId].
     fn make_after_id() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
@@ -280,7 +314,10 @@ impl Parser {
         })
     }
 
-    /// Used for both State::BeforeArgument and State::Argument
+    /// Create the transition table for [State::BeforeArgument] or [State::Argument].
+    ///
+    /// If `create_argument` is true, a non-space character will start a new
+    /// argument. This should be done for [State::BeforeArgument].
     fn make_argument(create_argument: bool) -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
@@ -291,6 +328,7 @@ impl Parser {
         })
     }
 
+    /// Create the transition table for [State::ArgumentEscape].
     fn make_argument_escape() -> EnumMap<u8, Entry> {
         Self::make_table(|ch| match ch {
             b'@' => Entry::new(Action::Nothing, State::Argument),
@@ -305,6 +343,7 @@ impl Parser {
         })
     }
 
+    /// Fill in the [Entry::fast_table] slots.
     fn build_fast_tables(table: &mut EnumMap<State, EnumMap<u8, Entry>>) {
         type ActionDisc = std::mem::Discriminant<Action>;
 
@@ -344,6 +383,7 @@ impl Parser {
         }
     }
 
+    /// Obtain the parser table to store in [Parser::table].
     fn parser_table() -> &'static EnumMap<State, EnumMap<u8, Entry>> {
         static INSTANCE: OnceCell<EnumMap<State, EnumMap<u8, Entry>>> = OnceCell::new();
         INSTANCE.get_or_init(|| {
@@ -367,6 +407,7 @@ impl Parser {
         })
     }
 
+    /// Create a new parser.
     pub fn new(max_line_length: usize) -> Self {
         Self {
             state: State::Start,
@@ -389,7 +430,7 @@ impl Parser {
         self.line_length
     }
 
-    /// Return the parser to its initial state
+    /// Return the parser to its initial state.
     pub fn reset(&mut self) {
         self.state = State::Start;
         self.line_length = 0;
@@ -400,6 +441,7 @@ impl Parser {
         self.error = None;
     }
 
+    /// Signal an error at a particular position on a line.
     fn error_at(&mut self, transient: &mut Transient, message: impl Into<String>, position: usize) {
         if self.state != State::ErrorEndOfLine {
             self.state = State::Error;
@@ -412,16 +454,23 @@ impl Parser {
         transient.arguments.clear();
     }
 
+    /// Signal an error at the current position.
     fn error(&mut self, transient: &mut Transient, message: impl Into<String>) {
         self.error_at(transient, message, self.line_length + 1);
     }
 
+    /// Return the parser and a [Transient] to their initial states.
     fn reset_transient(&mut self, transient: &mut Transient<'_>) {
         self.reset();
         transient.name = Cow::default();
         transient.arguments.clear();
     }
 
+    /// Apply an [Action] to the parser.
+    ///
+    /// `position` is the number of characters that appeared on the line
+    /// prior to `chunk`. On the other hand, [Parser::line_length] includes
+    /// the length of the chunk.
     fn apply<'data>(
         &mut self,
         action: &Action,
@@ -490,7 +539,7 @@ impl Parser {
         }
     }
 
-    /// Consume data until new end-of-line is seen, returning the remainder if any
+    /// Consume data until new end-of-line is seen, returning the message if any.
     fn next_message<'data>(
         &mut self,
         mut data: &'data [u8],
@@ -553,6 +602,10 @@ impl Parser {
         (None, data)
     }
 
+    /// Add data to the parser and return an iterator over messages that arise.
+    ///
+    /// The data is only consumed as a result of iteration. Dropping the
+    /// iterator without fully consuming it has undefined results.
     #[must_use = "Must consume the returned iterator for anything to happen"]
     pub fn append<'parser, 'data, D>(
         &'parser mut self,
@@ -622,6 +675,7 @@ mod test {
     use proptest::prelude::*;
     use rstest::*;
 
+    /// Helper macro for constructing messages for comparison
     macro_rules! msg {
         ( $mtype:expr, $name:literal, $mid:expr ) => {
             $crate::message::Message::new(

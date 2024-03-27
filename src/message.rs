@@ -96,6 +96,7 @@ where
     }
 }
 
+/// Message type used for interaction with Python.
 #[pyclass(name = "Message", module = "katcp_codec._lib", get_all, set_all)]
 pub struct PyMessage {
     pub mtype: MessageType,
@@ -105,6 +106,7 @@ pub struct PyMessage {
 }
 
 impl PyMessage {
+    /// Construct a new message.
     pub fn new(
         mtype: MessageType,
         name: Py<PyBytes>,
