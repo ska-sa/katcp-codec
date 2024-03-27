@@ -114,6 +114,9 @@ jobs:
       - name: Install x86_64 Rust compiler
         run: rustup target add x86_64-apple-darwin
         if: matrix.arch == 'x86_64'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install pipx
         run: pip install pipx
       - uses: pypa/cibuildwheel@v2.17.0
