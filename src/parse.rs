@@ -143,7 +143,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
-    /// Create a new error
+    /// Create a new error.
     fn new(message: impl Into<String>, position: usize) -> Self {
         Self {
             message: message.into(),
@@ -697,7 +697,7 @@ mod test {
 
     #[fixture]
     fn parser() -> Parser {
-        Parser::new(1000)
+        Parser::new(usize::MAX)
     }
 
     #[rstest]
@@ -761,6 +761,18 @@ mod test {
     fn test_fail(#[case] input: &[u8], mut parser: Parser) {
         let messages: Vec<_> = parser.append(input).collect();
         assert!(matches!(messages.as_slice(), &[Err(_)]));
+    }
+
+    #[test]
+    fn test_too_long() {
+        let mut parser = Parser::new(10);
+        let messages: Vec<_> = parser.append(&b"?hello1234\n").collect();
+        assert_eq!(
+            messages.as_slice(),
+            &[Err(ParseError::new("Line too long", 11))]
+        );
+        let messages: Vec<_> = parser.append(&b"?hello123\n").collect();
+        assert_eq!(messages.as_slice(), &[Ok(msg!(Request, b"hello123", None))]);
     }
 
     fn split_points_strategy(size: usize) -> impl Strategy<Value = Vec<usize>> {
