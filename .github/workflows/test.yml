@@ -20,6 +20,25 @@ jobs:
         run: pip install -c requirements.txt pre-commit
       - name: Run pre-commit checks
         run: pre-commit run --all-files
+  docs:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          cache: 'pip'
+      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Rust docs
+        # Document private items to validate their doc formatting.
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --locked
+      - name: Install Python doc dependencies
+        run: pip install -r doc-requirements.txt
+      - name: Install Python package
+        run: pip install .
+      - name: Build Python docs
+        run: SPHINX_OPTS="-W --keep-going" make -C doc html
   rust-tests:
     strategy:
       fail-fast: false
@@ -34,7 +53,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.76.0
       - uses: Swatinem/rust-cache@v2
       - name: Run Rust tests
-        run: cargo test
+        run: RUSTFLAGS="-D warnings" cargo test --locked
   python-tests:
     strategy:
       fail-fast: false
