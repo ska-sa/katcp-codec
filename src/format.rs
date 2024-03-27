@@ -61,6 +61,11 @@ where
         })
     }
 
+    /// Write a single byte to `target` and return the remaining suffix.
+    ///
+    /// # Safety
+    ///
+    /// `target` must not be empty.
     #[inline]
     #[must_use]
     unsafe fn append_byte(target: Out<[u8]>, value: u8) -> Out<[u8]> {
@@ -69,6 +74,11 @@ where
         suffix
     }
 
+    /// Write a byte slice to `target` and return the remaining suffix.
+    ///
+    /// # Safety
+    ///
+    /// `target` must be at least as large as `values`.
     #[inline]
     #[must_use]
     fn append_bytes<'a>(target: Out<'a, [u8]>, values: &[u8]) -> Out<'a, [u8]> {
@@ -140,6 +150,22 @@ where
         bytes.0
     }
 
+    /// Get the size and a callback to write the message.
+    ///
+    /// The callback panics if the provided buffer doesn't match the returned
+    /// size.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use uninit::prelude::*;
+    /// # use _lib::message::{Message, MessageType};
+    /// # let message: Message<&[u8], &[u8]> = Message::new(MessageType::Request, &b""[..], None, vec![]);
+    ///
+    /// let (size, callback) = message.write_size_callback();
+    /// let mut out = vec![0u8; size];
+    /// callback(out.as_out());
+    /// ```
     pub fn write_size_callback(&self) -> (usize, impl Fn(Out<[u8]>) + '_) {
         let size = self.write_size();
         let callback = move |out: Out<[u8]>| {
@@ -154,11 +180,13 @@ where
         (size, callback)
     }
 
+    /// Encode the message to a [Vec]
     pub fn to_vec(&self) -> Vec<u8> {
-        let size = self.write_size();
+        let (size, callback) = self.write_size_callback();
         let mut vec = Vec::with_capacity(size);
+        callback(vec.get_backing_buffer());
+        // SAFETY: we've used the callback to initialize all elements.
         unsafe {
-            self.write_out(vec.get_backing_buffer());
             vec.set_len(size);
         }
         vec
