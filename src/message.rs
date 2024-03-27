@@ -15,7 +15,7 @@
 
 //! The basic katcp message type
 
-use pyo3::exceptions::{PyOverflowError, PyValueError};
+use pyo3::exceptions::PyValueError;
 use pyo3::gc::PyVisit;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
@@ -40,6 +40,10 @@ pub enum MessageType {
 /// rather than [str]. The name has a restricted character set that ensures
 /// it can be decoded as ASCII (or UTF-8) but the arguments may contain
 /// arbitrary bytes.
+///
+/// The message ID and name are *not* validated when constructed with
+/// [Message::new]. Using an invalid value for either will not panic, but
+/// will lead to invalid formatting from [Message::write_out].
 #[derive(Clone, Eq, Debug)]
 pub struct Message<N, A>
 where
@@ -51,7 +55,7 @@ where
     /// Message name
     pub name: N,
     /// Message ID, if present. It must be positive.
-    pub mid: Option<i32>,
+    pub mid: Option<u32>,
     /// Message arguments
     pub arguments: Vec<A>,
 }
@@ -77,15 +81,12 @@ where
     A: AsRef<[u8]>,
 {
     /// Create a new message.
-    ///
-    /// Panics if the message ID is given and is not positive.
     pub fn new(
         mtype: MessageType,
         name: impl Into<N>,
-        mid: Option<i32>,
+        mid: Option<u32>,
         arguments: impl Into<Vec<A>>,
     ) -> Self {
-        assert!(mid.map_or(true, |x| x > 0));
         Self {
             mtype,
             name: name.into(),
@@ -99,7 +100,7 @@ where
 pub struct PyMessage {
     pub mtype: MessageType,
     pub name: Option<Py<PyBytes>>, // Option only to support __clear__
-    pub mid: Option<i32>,
+    pub mid: Option<u32>,
     pub arguments: Option<Py<PyList>>, // Option only to support __clear__
 }
 
@@ -107,10 +108,9 @@ impl PyMessage {
     pub fn new(
         mtype: MessageType,
         name: Py<PyBytes>,
-        mid: Option<i32>,
+        mid: Option<u32>,
         arguments: Py<PyList>,
     ) -> Self {
-        assert!(mid.map_or(true, |x| x > 0));
         Self {
             mtype,
             name: Some(name),
@@ -127,15 +127,10 @@ impl PyMessage {
     fn py_new<'py>(
         mtype: MessageType,
         name: Bound<'py, PyBytes>,
-        mid: Option<i32>,
+        mid: Option<u32>,
         arguments: Bound<'py, PyList>,
-    ) -> PyResult<Self> {
-        if mid.map_or(false, |x| x <= 0) {
-            return Err(PyOverflowError::new_err(
-                "Message ID must be None or positive",
-            ));
-        }
-        Ok(Self::new(mtype, name.unbind(), mid, arguments.unbind()))
+    ) -> Self {
+        Self::new(mtype, name.unbind(), mid, arguments.unbind())
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {

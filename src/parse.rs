@@ -181,7 +181,7 @@ pub struct Parser {
     max_line_length: usize,
     mtype: Option<MessageType>,
     name: Vec<u8>,
-    mid: Option<i32>,
+    mid: Option<u32>,
     arguments: Vec<Vec<u8>>,
     error: Option<ParseError>,
     table: &'static EnumMap<State, EnumMap<u8, Entry>>,
@@ -440,10 +440,10 @@ impl Parser {
                 // TODO: optimise this using the whole chunk at once
                 for ch in chunk.iter() {
                     // Compute the update in 64-bit to detect overflow at the end
-                    let mid = self.mid.unwrap_or(0) as i64;
-                    let mid = mid * 10 + ((*ch - b'0') as i64);
+                    let mid = self.mid.unwrap_or(0) as u64;
+                    let mid = mid * 10 + ((*ch - b'0') as u64);
                     if let Ok(value) = i32::try_from(mid) {
-                        self.mid = Some(value);
+                        self.mid = Some(value as u32);
                     } else {
                         self.error_at(transient, "Message ID overflowed", position);
                         break;

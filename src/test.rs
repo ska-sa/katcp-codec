@@ -32,8 +32,8 @@ pub(crate) fn name_strategy() -> impl Strategy<Value = Vec<u8>> {
     "[A-Za-z][-A-Za-z0-9]*".prop_map(|x| x.into_bytes())
 }
 
-pub(crate) fn mid_strategy() -> impl Strategy<Value = Option<i32>> {
-    prop_oneof![Just(None), (1..0x7fffffffi32).prop_map(Some)]
+pub(crate) fn mid_strategy() -> impl Strategy<Value = Option<u32>> {
+    prop_oneof![Just(None), (1..(i32::MAX as u32)).prop_map(Some)]
 }
 
 pub(crate) fn arguments_strategy() -> impl Strategy<Value = Vec<Vec<u8>>> {

@@ -60,7 +60,7 @@ class Message:
     mtype: MessageType
     #: Message name (must start with [A-Za-z] and contain only [A-Za-z0-9-])
     name: bytes
-    #: Message ID (if specified, must be positive and less than 2**32)
+    #: Message ID (if specified, must be positive and less than 2**31)
     mid: Optional[int]
     #: Message arguments
     arguments: List[bytes]
@@ -73,7 +73,7 @@ class Message:
         if not validate:
             return
         if self.mid is not None and not 1 <= self.mid <= 2**31 - 1:
-            raise OverflowError("Message ID must be in the range [1, 2**31 - 1)")
+            raise OverflowError("Message ID must be in the range [1, 2**31 - 1]")
         if not _NAME_RE.fullmatch(self.name):
             raise ValueError("Name is invalid")
 
