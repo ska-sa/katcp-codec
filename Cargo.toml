@@ -40,3 +40,7 @@ rstest = { version = "0.18.2", default-features = false }
 [[bench]]
 name = "bench_format"
 harness = false
+
+[[bench]]
+name = "bench_parse"
+harness = false
