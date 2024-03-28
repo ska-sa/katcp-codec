@@ -328,12 +328,20 @@ dependencies = [
  "criterion",
  "enum-map",
  "itoa",
- "once_cell",
+ "katcp-codec-fsm",
  "proptest",
  "pyo3",
  "rstest",
  "thiserror",
  "uninit",
+]
+
+[[package]]
+name = "katcp-codec-fsm"
+version = "0.0.0"
+dependencies = [
+ "enum-map",
+ "pyo3",
 ]
 
 [[package]]

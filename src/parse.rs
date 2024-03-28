@@ -13,126 +13,18 @@
  * limitations under the License.
  */
 
-use enum_map::{enum_map, Enum, EnumMap};
-use once_cell::sync::OnceCell;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::Arc;
 use thiserror::Error;
 
+use katcp_codec_fsm::{Action, State};
+
 use crate::message::{Message, MessageType};
+use crate::tables::PARSER_TABLE;
 
 type ParsedMessage<'data> = Message<Cow<'data, [u8]>, Cow<'data, [u8]>>;
-
-/// State in the state machine
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Enum)]
-enum State {
-    /// Initial state
-    Start,
-    /// Seen whitespace, so this can only legally be a blank line
-    Empty,
-    /// Seen the type, haven't started the name
-    BeforeName,
-    /// Middle of the name
-    Name,
-    /// After [ in message ID
-    BeforeId,
-    /// Middle of the message ID
-    Id,
-    /// After the ] terminating the message ID
-    AfterId,
-    /// Seen some whitespace, haven't started the next argument yet
-    BeforeArgument,
-    /// Middle of an argument, not following a backslash
-    Argument,
-    /// Seen a backslash in an argument
-    ArgumentEscape,
-    /// Invalid character seen, waiting for the end-of-line
-    #[default]
-    Error,
-    /// Terminal state for a valid line
-    EndOfLine,
-    /// Terminal state for an invalid line
-    ErrorEndOfLine,
-}
-
-impl State {
-    /// Whether this state corresponds to an end of line.
-    fn is_terminal(&self) -> bool {
-        matches!(self, State::EndOfLine | State::ErrorEndOfLine)
-    }
-}
-
-/// Transition action in the state machine
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
-enum Action {
-    /// No action needed (e.g. skipping whitespace, or an error)
-    #[default]
-    Nothing,
-    /// Append the current character to the name
-    Name,
-    /// Append a digit to the message ID
-    Id,
-    /// Append the current character to the argument
-    Argument,
-    /// Append a specific character to the argument
-    ArgumentEscaped(u8),
-    /// Set the message type
-    SetType(MessageType),
-    /// Set line_length back to 0 (after empty message)
-    ResetLineLength,
-    /// Set an error message
-    Error,
-}
-
-impl Action {
-    fn is_mergeable(&self) -> bool {
-        matches!(
-            self,
-            Action::Nothing | Action::Name | Action::Id | Action::Argument | Action::Error
-        )
-    }
-}
-
-/// (state, char) entry in the state machine
-#[derive(Clone, Default, Eq, PartialEq, Hash)]
-struct Entry {
-    /// Action to apply
-    action: Action,
-    /// Next state
-    state: State,
-    /// Whether to create a new argument before applying the action
-    create_argument: bool,
-    /// Following characters that can be merged into the action
-    fast_table: Option<Arc<EnumMap<u8, bool>>>,
-}
-
-impl Entry {
-    /// Construct a new entry.
-    ///
-    /// The fast_table is omitted; these are filled in later.
-    fn new_full(action: Action, state: State, create_argument: bool) -> Self {
-        Self {
-            action,
-            state,
-            create_argument,
-            fast_table: None,
-        }
-    }
-
-    /// Construct a new entry that does not start a new argument.
-    fn new(action: Action, state: State) -> Self {
-        Self::new_full(action, state, false)
-    }
-
-    /// Construct an entry that signals an error.
-    fn error() -> Self {
-        Self::new(Action::Error, State::Error)
-    }
-}
 
 /// Error returned from parsing.
 #[derive(Error, Clone, Debug, Eq, PartialEq)]
@@ -205,8 +97,6 @@ pub struct Parser {
     arguments: Vec<Vec<u8>>,
     /// Current error, if we are in an error state
     error: Option<ParseError>,
-    /// Cached transition table
-    table: &'static EnumMap<State, EnumMap<u8, Entry>>,
 }
 
 /// Extend a `Cow<'_, [T]>` with new elements.
@@ -221,192 +111,6 @@ fn extend_cow<'a>(cow: &mut Cow<'a, [u8]>, elements: &'a [u8]) {
 }
 
 impl Parser {
-    /// Generic helper for building the transition table for one state.
-    ///
-    /// The callback is invoked for every [u8] value. The rules for `' '`
-    /// and `\n` are copied over those for `\t` and `\r` respectively.
-    fn make_table(callback: impl Fn(u8) -> Entry) -> EnumMap<u8, Entry> {
-        let mut table = EnumMap::default();
-        for ch in 0..=255u8 {
-            table[ch] = callback(ch);
-        }
-        // Simplify the callers by applying some generic rules
-        if table[b'\n'].state == State::Error {
-            table[b'\n'].state = State::ErrorEndOfLine;
-        }
-        assert!(matches!(
-            table[b'\n'].state,
-            State::EndOfLine | State::ErrorEndOfLine | State::Start
-        ));
-        table[b'\t'] = table[b' '].clone();
-        table[b'\r'] = table[b'\n'].clone();
-        table
-    }
-
-    /// Create a transition table for an error state.
-    fn make_error() -> EnumMap<u8, Entry> {
-        Self::make_table(|_| Entry::error())
-    }
-
-    /// Create the transition table for [State::Start].
-    fn make_start() -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b' ' => Entry::new(Action::Nothing, State::Empty),
-            b'?' => Entry::new(Action::SetType(MessageType::Request), State::BeforeName),
-            b'!' => Entry::new(Action::SetType(MessageType::Reply), State::BeforeName),
-            b'#' => Entry::new(Action::SetType(MessageType::Inform), State::BeforeName),
-            b'\n' => Entry::new(Action::ResetLineLength, State::Start),
-            _ => Entry::error(),
-        })
-    }
-
-    /// Create the transition table for [State::Empty].
-    fn make_empty() -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b' ' => Entry::new(Action::Nothing, State::Empty),
-            b'\n' => Entry::new(Action::ResetLineLength, State::Start),
-            _ => Entry::error(),
-        })
-    }
-
-    /// Create the transition table for [State::BeforeName].
-    fn make_before_name() -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b'A'..=b'Z' | b'a'..=b'z' => Entry::new(Action::Name, State::Name),
-            _ => Entry::error(),
-        })
-    }
-
-    /// Create the transition table for [State::Name].
-    fn make_name() -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' => Entry::new(Action::Name, State::Name),
-            b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
-            b'[' => Entry::new(Action::Nothing, State::BeforeId),
-            b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
-            _ => Entry::error(),
-        })
-    }
-
-    /// Create the transition table for [State::BeforeId].
-    fn make_before_id() -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b'1'..=b'9' => Entry::new(Action::Id, State::Id),
-            _ => Entry::error(),
-        })
-    }
-
-    /// Create the transition table for [State::Id].
-    fn make_id() -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b'0'..=b'9' => Entry::new(Action::Id, State::Id),
-            b']' => Entry::new(Action::Nothing, State::AfterId),
-            _ => Entry::error(),
-        })
-    }
-
-    /// Create the transition table for [State::AfterId].
-    fn make_after_id() -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
-            b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
-            _ => Entry::error(),
-        })
-    }
-
-    /// Create the transition table for [State::BeforeArgument] or [State::Argument].
-    ///
-    /// If `create_argument` is true, a non-space character will start a new
-    /// argument. This should be done for [State::BeforeArgument].
-    fn make_argument(create_argument: bool) -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b' ' => Entry::new(Action::Nothing, State::BeforeArgument),
-            b'\n' => Entry::new(Action::Nothing, State::EndOfLine),
-            b'\\' => Entry::new_full(Action::Nothing, State::ArgumentEscape, create_argument),
-            b'\0' | b'\x1B' => Entry::error(),
-            _ => Entry::new_full(Action::Argument, State::Argument, create_argument),
-        })
-    }
-
-    /// Create the transition table for [State::ArgumentEscape].
-    fn make_argument_escape() -> EnumMap<u8, Entry> {
-        Self::make_table(|ch| match ch {
-            b'@' => Entry::new(Action::Nothing, State::Argument),
-            b'\\' => Entry::new(Action::ArgumentEscaped(b'\\'), State::Argument),
-            b'_' => Entry::new(Action::ArgumentEscaped(b' '), State::Argument),
-            b'0' => Entry::new(Action::ArgumentEscaped(b'\0'), State::Argument),
-            b'n' => Entry::new(Action::ArgumentEscaped(b'\n'), State::Argument),
-            b'r' => Entry::new(Action::ArgumentEscaped(b'\r'), State::Argument),
-            b'e' => Entry::new(Action::ArgumentEscaped(b'\x1B'), State::Argument),
-            b't' => Entry::new(Action::ArgumentEscaped(b'\t'), State::Argument),
-            _ => Entry::error(),
-        })
-    }
-
-    /// Fill in the [Entry::fast_table] slots.
-    fn build_fast_tables(table: &mut EnumMap<State, EnumMap<u8, Entry>>) {
-        type ActionDisc = std::mem::Discriminant<Action>;
-
-        let mut cache: HashMap<(State, ActionDisc), Arc<EnumMap<u8, bool>>> = HashMap::new();
-
-        // Rust borrowing rules complicate this looping. We need to mutate
-        // the table, which we can't do if we're borrowing it for iteration.
-        let states: Vec<State> = table
-            .iter()
-            .map(|(state, _)| state)
-            .filter(|state| !state.is_terminal())
-            .collect();
-        for src_state in states {
-            for ch in 0..=255u8 {
-                let entry = &table[src_state][ch];
-                if entry.state.is_terminal() || !entry.action.is_mergeable() {
-                    continue;
-                }
-                let state = entry.state;
-                let key = (state, std::mem::discriminant(&entry.action));
-                // Lifetime of `entry` ends here, leaving `table` accessible
-
-                let fast_table = cache.entry(key).or_insert_with(|| {
-                    let mut result = EnumMap::default();
-                    for ch2 in 0..=255u8 {
-                        let entry = &table[state][ch2];
-                        result[ch2] = entry.state == state
-                            && std::mem::discriminant(&entry.action) == key.1
-                            && !entry.create_argument;
-                    }
-                    Arc::new(result)
-                });
-                if fast_table.values().any(|x| *x) {
-                    table[src_state][ch].fast_table = Some(fast_table.clone());
-                }
-            }
-        }
-    }
-
-    /// Obtain the parser table to store in [Parser::table].
-    fn parser_table() -> &'static EnumMap<State, EnumMap<u8, Entry>> {
-        static INSTANCE: OnceCell<EnumMap<State, EnumMap<u8, Entry>>> = OnceCell::new();
-        INSTANCE.get_or_init(|| {
-            let mut table = enum_map! {
-                State::Start => Self::make_start(),
-                State::Empty => Self::make_empty(),
-                State::BeforeName => Self::make_before_name(),
-                State::Name => Self::make_name(),
-                State::BeforeId => Self::make_before_id(),
-                State::Id => Self::make_id(),
-                State::AfterId => Self::make_after_id(),
-                State::BeforeArgument => Self::make_argument(true),
-                State::Argument => Self::make_argument(false),
-                State::ArgumentEscape => Self::make_argument_escape(),
-                State::Error => Self::make_error(),
-                State::EndOfLine => Self::make_error(),
-                State::ErrorEndOfLine => Self::make_error(),
-            };
-            Self::build_fast_tables(&mut table);
-            table
-        })
-    }
-
     /// Create a new parser.
     pub fn new(max_line_length: usize) -> Self {
         Self {
@@ -418,7 +122,6 @@ impl Parser {
             mid: None,
             arguments: vec![],
             error: None,
-            table: Self::parser_table(),
         }
     }
 
@@ -553,7 +256,7 @@ impl Parser {
                 self.error(transient, "Line too long");
             }
 
-            let entry = &self.table[self.state][data[0]];
+            let entry = &PARSER_TABLE[self.state][data[0]];
             if entry.create_argument {
                 transient.arguments.push(Cow::default());
             }

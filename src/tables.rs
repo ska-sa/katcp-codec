@@ -13,4 +13,21 @@
  * limitations under the License.
  */
 
+use enum_map::EnumMap;
+use katcp_codec_fsm::MessageType::*;
+use katcp_codec_fsm::{Action, State};
+
+/// (state, char) entry in the state machine
+#[derive(Clone, Default, Eq, PartialEq)]
+pub(crate) struct Entry {
+    /// Action to apply
+    pub action: Action,
+    /// Next state
+    pub state: State,
+    /// Whether to create a new argument before applying the action
+    pub create_argument: bool,
+    /// Following characters that can be merged into the action
+    pub fast_table: Option<&'static EnumMap<u8, bool>>,
+}
+
 include!(concat!(env!("OUT_DIR"), "/tables.rs"));

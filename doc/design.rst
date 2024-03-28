@@ -71,7 +71,7 @@ additional error state for immediately after encountering an EOL. Encountering
 any character that is not shown will transition to one of these states.
 
 Acceleration
-------------
+^^^^^^^^^^^^
 Using a state machine makes it quite straightforward to build up a message
 incrementally. Unfortunately, the initial implementation was quite slow,
 because character of the message are appended to the storage one byte at a
@@ -107,3 +107,15 @@ Additionally, exceeding the maximum message length causes a transition to
 error state, but this is not represented by the state machine. So the code to
 scan for the chunk size has extra logic to stop the chunk if it would cross
 that boundary.
+
+Build-time table generation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The state tables are generated programmatically, but it could be expensive to
+do so each time a Parser is instantiated. Instead, a Rust build script is used
+to generate the tables at build time, and format them as Rust source code. The
+generated code is included into file:`src/tables.rs`.
+
+This introduces a complication in that the build script and the run-time parser
+need to share the State and Action enums. That's implemented by using a Cargo
+workspace, with a separate crate in :file:`crates/fsm` holding the actual
+definitions of these types.

@@ -24,14 +24,7 @@ use pyo3::PyTraverseError;
 use std::borrow::Cow;
 use uninit::prelude::*;
 
-/// Type of katcp message
-#[pyclass(module = "katcp_codec._lib", rename_all = "SCREAMING_SNAKE_CASE")]
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
-pub enum MessageType {
-    Request = 1,
-    Reply = 2,
-    Inform = 3,
-}
+pub use katcp_codec_fsm::MessageType;
 
 /// A katcp message. The name and arguments can either own their data or
 /// reference existing data from a buffer.
