@@ -3,6 +3,10 @@ on: [push, pull_request]
 concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
+env:
+  RUST_VERSION: '1.76.0'
+  MIN_PYTHON_VERSION: '3.8'
+  MAX_PYTHON_VERSION: '3.12'
 jobs:
   pre-commit:
     runs-on: ubuntu-22.04
@@ -10,10 +14,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
+          python-version: ${{ env.MIN_PYTHON_VERSION }}
           cache: 'pip'
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@v1
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install pre-commit
@@ -27,9 +32,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
+          python-version: ${{ env.MIN_PYTHON_VERSION }}
           cache: 'pip'
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - uses: Swatinem/rust-cache@v2
       - name: Build Rust docs
         # Document private items to validate their doc formatting.
@@ -42,21 +49,21 @@ jobs:
         run: SPHINX_OPTS="-W --keep-going" make -C doc html
 
   rust-tests:
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ['3.8', '3.9', '3.10', '3.11', '3.12']
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version:  ${{ env.MAX_PYTHON_VERSION }}
           cache: 'pip'
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - uses: Swatinem/rust-cache@v2
       - name: Run Rust tests
         run: RUSTFLAGS="-D warnings" cargo test --locked
+      - name: Run Rust benchmarks
+        run: cargo bench --locked
 
   python-tests:
     strategy:
@@ -70,7 +77,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: 'pip'
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -93,14 +102,14 @@ jobs:
         with:
           platforms: arm64
         if: matrix.arch != 'x86_64'
-      - id: rust-toolchain
-        uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - uses: Swatinem/rust-cache@v2
       - uses: pypa/cibuildwheel@v2.17.0
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_BUILD: ${{ matrix.python }}-manylinux*
-          RUST_VERSION: ${{ steps.rust-toolchain.outputs.name }}
       - uses: actions/upload-artifact@v4
         with:
           name: wheel_linux-${{ matrix.arch }}-${{ matrix.python }}
@@ -116,14 +125,16 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - uses: Swatinem/rust-cache@v2
       - name: Install x86_64 Rust compiler
         run: rustup target add x86_64-apple-darwin
         if: matrix.arch == 'x86_64'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ env.MAX_PYTHON_VERSION }}
           cache: 'pip'
       - name: Install pipx
         run: pip install pipx
@@ -142,7 +153,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
+          python-version: ${{ env.MIN_PYTHON_VERSION }}
           cache: 'pip'
       - name: install build tool
         run: pip install -c requirements.txt build
