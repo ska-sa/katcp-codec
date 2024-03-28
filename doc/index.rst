@@ -7,13 +7,14 @@ Welcome to katcp-codec's documentation!
 =======================================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents:
 
    introduction
    installation
    usage
    design
+   changelog
    Reference <modules>
 
 Indices and tables
