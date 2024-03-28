@@ -13,12 +13,4 @@
  * limitations under the License.
  */
 
-#![doc = include_str!("../README.md")]
-
-mod binding;
-pub mod format;
-pub mod message;
-pub mod parse;
-mod tables;
-#[cfg(test)]
-mod test;
+include!(concat!(env!("OUT_DIR"), "/tables.rs"));

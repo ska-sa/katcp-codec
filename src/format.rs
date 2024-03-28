@@ -13,12 +13,11 @@
  * limitations under the License.
  */
 
-use enum_map::{enum_map, EnumMap};
-use once_cell::sync::OnceCell;
 use std::ops::AddAssign;
 use uninit::prelude::*;
 
 use crate::message::{Message, MessageType};
+use crate::tables::{ESCAPE_FLAG, ESCAPE_SYMBOL};
 
 // Accumulator that panics on overflow
 struct Accumulator(usize);
@@ -43,22 +42,6 @@ where
             MessageType::Reply => b'!',
             MessageType::Inform => b'#',
         }
-    }
-
-    fn escape_map() -> &'static EnumMap<u8, u8> {
-        static INSTANCE: OnceCell<EnumMap<u8, u8>> = OnceCell::new();
-        INSTANCE.get_or_init(|| {
-            enum_map! {
-                b'\r' => b'r',
-                b'\n' => b'n',
-                b'\t' => b't',
-                b'\x1B' => b'e',
-                b'\0' => b'0',
-                b'\\' => b'\\',
-                b' ' => b'_',
-                _ => 0,  // Marker for not needing an escape
-            }
-        })
     }
 
     /// Write a single byte to `target` and return the remaining suffix.
@@ -105,7 +88,6 @@ where
             target = Self::append_bytes(target, buffer.format(mid).as_bytes());
             target = Self::append_byte(target, b']');
         }
-        let emap = Self::escape_map();
         for argument in self.arguments.iter() {
             let argument = argument.as_ref();
             target = Self::append_byte(target, b' ');
@@ -113,7 +95,7 @@ where
                 target = Self::append_bytes(target, b"\\@");
             }
             for &c in argument.iter() {
-                let esc = emap[c];
+                let esc = ESCAPE_SYMBOL[c as usize];
                 if esc == 0 {
                     // No escaping is needed
                     target = Self::append_byte(target, c);
@@ -140,14 +122,16 @@ where
             let mid_formatted = buffer.format(mid);
             bytes += 2 + mid_formatted.len(); // 2 for the brackets
         }
-        let emap = Self::escape_map();
         for argument in self.arguments.iter() {
             let argument = argument.as_ref();
             if argument.is_empty() {
                 bytes += 2; // For the \@
             } else {
                 bytes += argument.len();
-                bytes += argument.iter().filter(|&&c| emap[c] != 0).count(); // escapes
+                bytes += argument
+                    .iter()
+                    .filter(|&&c| ESCAPE_FLAG[c as usize])
+                    .count();
             }
         }
         bytes.0
