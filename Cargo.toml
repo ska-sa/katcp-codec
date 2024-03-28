@@ -22,8 +22,6 @@ edition = "2021"
 name = "_lib"
 crate-type = ["cdylib", "rlib"]  # rlib included just for testing
 
-# TODO: gil-refs currently seems to be required, but it should be removed
-# when possible.
 [dependencies]
 enum-map = "2.7.3"
 itoa = "1.0.10"
