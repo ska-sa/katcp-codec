@@ -17,23 +17,31 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 
 use _lib::message::{Message, MessageType};
 
-fn format_no_escape(c: &mut Criterion) {
-    let mut group = c.benchmark_group("format_no_escape");
-    for args in [1, 10, 100, 1000, 10000] {
-        let msg: Message<&[u8], &[u8]> = Message::new(
-            MessageType::Request,
-            b"test_message".as_slice(),
-            Some(12345678),
-            vec![b"123.4567890:123.4567890".as_slice(); args],
-        );
-        let len = msg.to_vec().len();
-        group.throughput(Throughput::Bytes(len as u64));
-        group.bench_function(BenchmarkId::from_parameter(args), |b| {
-            b.iter(|| msg.to_vec());
-        });
+fn format(c: &mut Criterion) {
+    let mut group = c.benchmark_group("format");
+    for escapes in [false, true] {
+        let arg_value = if escapes {
+            b"[1, 2, 3, 4, 5, 6, 7, 8]".as_slice()
+        } else {
+            b"123.4567890:123.45678901".as_slice()
+        };
+        for args in [1, 10, 100, 1000, 10000] {
+            let msg: Message<&[u8], &[u8]> = Message::new(
+                MessageType::Request,
+                b"test_message".as_slice(),
+                Some(12345678),
+                vec![arg_value; args],
+            );
+            let len = msg.to_vec().len();
+            let name = if escapes { "escapes" } else { "no escapes" };
+            group.throughput(Throughput::Bytes(len as u64));
+            group.bench_function(BenchmarkId::new(name, args), |b| {
+                b.iter_with_large_drop(|| msg.to_vec());
+            });
+        }
     }
     group.finish();
 }
 
-criterion_group!(benches, format_no_escape);
+criterion_group!(benches, format);
 criterion_main!(benches);
