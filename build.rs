@@ -31,31 +31,30 @@ fn escape(c: u8) -> u8 {
     }
 }
 
+fn write_format_tables(w: &mut impl Write) -> Result<(), std::io::Error> {
+    writeln!(w, "pub(crate) const ESCAPE_SYMBOL: [u8; 256] = [")?;
+    for i in 0..=255u8 {
+        let value = escape(i);
+        writeln!(w, "    {value},")?;
+    }
+    writeln!(w, "];")?;
+
+    writeln!(w, "pub(crate) const ESCAPE_FLAG: [bool; 256] = [")?;
+    for i in 0..=255u8 {
+        let value = escape(i) != 0;
+        writeln!(w, "    {value},")?;
+    }
+    writeln!(w, "];")?;
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let out_dir = std::env::var_os("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir);
     let tables_path = out_path.join("tables.rs");
     let mut tables_writer = fs::File::create(tables_path)?;
 
-    writeln!(
-        tables_writer,
-        "pub(crate) const ESCAPE_SYMBOL: [u8; 256] = ["
-    )?;
-    for i in 0..=255u8 {
-        let value = escape(i);
-        writeln!(tables_writer, "    {value},")?;
-    }
-    writeln!(tables_writer, "];")?;
-
-    writeln!(
-        tables_writer,
-        "pub(crate) const ESCAPE_FLAG: [bool; 256] = ["
-    )?;
-    for i in 0..=255u8 {
-        let value = escape(i) != 0;
-        writeln!(tables_writer, "    {value},")?;
-    }
-    writeln!(tables_writer, "];")?;
+    write_format_tables(&mut tables_writer)?;
     drop(tables_writer);
 
     println!("cargo:rerun-if-changed=build.rs");
