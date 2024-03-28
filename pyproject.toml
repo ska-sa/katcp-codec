@@ -35,7 +35,7 @@ classifiers = [
 Homepage = "https://github.com/ska-sa/katcp-codec"
 
 [project.optional-dependencies]
-test = ["pre-commit", "pytest"]
+dev = ["pre-commit", "pytest", "build"]
 doc = ["sphinx", "sphinxcontrib-tikz", "sphinx-rtd-theme"]
 
 [tool.setuptools.packages.find]

@@ -20,6 +20,7 @@ jobs:
         run: pip install -c requirements.txt pre-commit
       - name: Run pre-commit checks
         run: pre-commit run --all-files
+
   docs:
     runs-on: ubuntu-22.04
     steps:
@@ -39,6 +40,7 @@ jobs:
         run: pip install .
       - name: Build Python docs
         run: SPHINX_OPTS="-W --keep-going" make -C doc html
+
   rust-tests:
     strategy:
       fail-fast: false
@@ -50,10 +52,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: 'pip'
       - uses: dtolnay/rust-toolchain@1.76.0
       - uses: Swatinem/rust-cache@v2
       - name: Run Rust tests
         run: RUSTFLAGS="-D warnings" cargo test --locked
+
   python-tests:
     strategy:
       fail-fast: false
@@ -65,6 +69,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: 'pip'
       - uses: dtolnay/rust-toolchain@1.76.0
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
@@ -73,6 +78,7 @@ jobs:
         run: pip install .
       - name: Run Python tests
         run: pytest -v -ra
+
   linux-wheels:
     needs: [pre-commit, python-tests, rust-tests]
     strategy:
@@ -99,6 +105,7 @@ jobs:
         with:
           name: wheel_linux-${{ matrix.arch }}-${{ matrix.python }}
           path: ./wheelhouse/*.whl
+
   macos-wheels:
     needs: [pre-commit, python-tests, rust-tests]
     strategy:
@@ -116,7 +123,8 @@ jobs:
         if: matrix.arch == 'x86_64'
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
+          cache: 'pip'
       - name: Install pipx
         run: pip install pipx
       - uses: pypa/cibuildwheel@v2.17.0
@@ -127,3 +135,43 @@ jobs:
         with:
           name: wheel_macos-${{ matrix.arch }}-${{ matrix.python }}
           path: ./wheelhouse/*.whl
+
+  sdist:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          cache: 'pip'
+      - name: install build tool
+        run: pip install -c requirements.txt build
+      - name: build sdist
+        run: python -m build --sdist .
+      - uses: action/upload-artifact@v4
+        with:
+          name: sdist
+          path: ./dist/*.tar.gz
+
+  combine-wheels:
+    needs: [linux-wheels, macos-wheels, sdist]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Create paths
+        run: mkdir -p dist wheelhouse
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel_*
+          path: wheelhouse/
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist/
+          merge-multiple: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/
+            wheelhouse/
