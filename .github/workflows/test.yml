@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: '3.8'
           cache: 'pip'
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@1.80.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: '3.8'
           cache: 'pip'
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@1.80.0
       - uses: Swatinem/rust-cache@v2
       - name: Build Rust docs
         # Document private items to validate their doc formatting.
@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: 'pip'
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@1.80.0
       - uses: Swatinem/rust-cache@v2
       - name: Run Rust tests
         run: RUSTFLAGS="-D warnings" cargo test --locked
@@ -70,7 +70,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: 'pip'
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@1.80.0
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -94,7 +94,7 @@ jobs:
           platforms: arm64
         if: matrix.arch != 'x86_64'
       - id: rust-toolchain
-        uses: dtolnay/rust-toolchain@1.76.0
+        uses: dtolnay/rust-toolchain@1.80.0
       - uses: Swatinem/rust-cache@v2
       - uses: pypa/cibuildwheel@v2.17.0
         env:
@@ -116,7 +116,7 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.76.0
+      - uses: dtolnay/rust-toolchain@1.80.0
       - uses: Swatinem/rust-cache@v2
       - name: Install x86_64 Rust compiler
         run: rustup target add x86_64-apple-darwin
