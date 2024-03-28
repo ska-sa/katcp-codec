@@ -15,7 +15,7 @@
 
 //! The basic katcp message type
 
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::gc::PyVisit;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
@@ -169,10 +169,17 @@ impl PyMessage {
             mid: self.mid,
             arguments,
         };
-        let (size, callback) = message.write_size_callback();
+        let size = message.write_size();
         PyBytes::new_bound_with(py, size, |bytes: &mut [u8]| {
-            callback(bytes.as_out());
-            Ok(())
+            let remain = message.write_out(bytes.as_out());
+            if !remain.is_empty() {
+                // This should be unreachable, because we hold the GIL.
+                Err(PyRuntimeError::new_err(
+                    "Message changed size during formatting",
+                ))
+            } else {
+                Ok(())
+            }
         })
     }
 }
