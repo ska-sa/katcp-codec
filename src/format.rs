@@ -95,7 +95,7 @@ where
                 target = Self::append_bytes(target, b"\\@");
             }
             for &c in argument.iter() {
-                let esc = ESCAPE_SYMBOL[c as usize];
+                let esc = ESCAPE_SYMBOL[c];
                 if esc == 0 {
                     // No escaping is needed
                     target = Self::append_byte(target, c);
@@ -128,10 +128,7 @@ where
                 bytes += 2; // For the \@
             } else {
                 bytes += argument.len();
-                bytes += argument
-                    .iter()
-                    .filter(|&&c| ESCAPE_FLAG[c as usize])
-                    .count();
+                bytes += argument.iter().filter(|&&c| ESCAPE_FLAG[c]).count();
             }
         }
         bytes.0

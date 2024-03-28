@@ -32,19 +32,19 @@ fn escape(c: u8) -> u8 {
 }
 
 fn write_format_tables(w: &mut impl Write) -> Result<(), std::io::Error> {
-    writeln!(w, "pub(crate) const ESCAPE_SYMBOL: [u8; 256] = [")?;
+    writeln!(w, "pub(crate) const ESCAPE_SYMBOL: enum_map::EnumMap<u8, u8> = enum_map::EnumMap::from_array([")?;
     for i in 0..=255u8 {
         let value = escape(i);
         writeln!(w, "    {value},")?;
     }
-    writeln!(w, "];")?;
+    writeln!(w, "]);")?;
 
-    writeln!(w, "pub(crate) const ESCAPE_FLAG: [bool; 256] = [")?;
+    writeln!(w, "pub(crate) const ESCAPE_FLAG: enum_map::EnumMap<u8, bool> = enum_map::EnumMap::from_array([")?;
     for i in 0..=255u8 {
         let value = escape(i) != 0;
         writeln!(w, "    {value},")?;
     }
-    writeln!(w, "];")?;
+    writeln!(w, "]);")?;
     Ok(())
 }
 
