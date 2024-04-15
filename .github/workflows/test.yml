@@ -97,6 +97,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -124,6 +126,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -150,6 +154,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.MIN_PYTHON_VERSION }}
