@@ -23,7 +23,7 @@ name = "katcp-codec"
 dynamic = ["version"]
 authors = [{name = "Bruce Merry", email = "bmerry@sarao.ac.za"}]
 description = "Fast encoding and decoding of katcp messages"
-readme = "README.rst"
+readme = "README.md"
 requires-python = ">=3.8"
 keywords = ["katcp"]
 classifiers = [
