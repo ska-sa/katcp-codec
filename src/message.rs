@@ -128,6 +128,7 @@ impl PyMessage {
         Self::new(mtype, name.unbind(), mid, arguments.unbind())
     }
 
+    // See https://pyo3.rs/v0.21.2/class/protocols#garbage-collector-integration
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         if let Some(name) = &self.name {
             visit.call(name)?;
@@ -152,7 +153,7 @@ impl PyMessage {
         let arguments = self
             .arguments
             .as_ref()
-            .ok_or_else(|| PyValueError::new_err("name is None"))?;
+            .ok_or_else(|| PyValueError::new_err("arguments is None"))?;
         // TODO: this is creating a new vector to hold the arguments.
         // Can we use another trait to handle directly iterating the PyList?
         let arguments: Vec<PyBackedBytes> = arguments.bind(py).extract()?;
