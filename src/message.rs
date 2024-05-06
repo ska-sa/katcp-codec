@@ -128,6 +128,7 @@ impl PyMessage {
         Self::new(mtype, name.unbind(), mid, arguments.unbind())
     }
 
+    // See https://pyo3.rs/v0.21.2/class/protocols#garbage-collector-integration
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         if let Some(name) = &self.name {
             visit.call(name)?;
