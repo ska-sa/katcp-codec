@@ -5,7 +5,7 @@ repos:
       - id: fmt
       - id: clippy
   - repo: https://github.com/psf/black
-    rev: 24.3.0
+    rev: 24.8.0
     hooks:
       - id: black
   - repo: https://github.com/pycqa/isort
@@ -14,11 +14,11 @@ repos:
       - id: isort
         args: ["--filter-files"]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.3
+    rev: v0.9.1
     hooks:
       - id: ruff
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.9.0
+    rev: v1.14.1
     hooks:
       - id: mypy
         # Passing filenames to mypy can do odd things.
@@ -27,7 +27,7 @@ repos:
         # The pre-commit hook passes some options, but we set options in pyproject.toml.
         args: []
         additional_dependencies:
-          - pytest==8.1.1
+          - pytest==8.3.4
   - repo: https://github.com/jazzband/pip-tools
     rev: 7.4.1
     hooks:
