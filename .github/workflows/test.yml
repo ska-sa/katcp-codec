@@ -9,7 +9,7 @@ env:
   MAX_PYTHON_VERSION: '3.12'
 jobs:
   pre-commit:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,7 +27,7 @@ jobs:
         run: pre-commit run --all-files
 
   docs:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,7 +49,7 @@ jobs:
         run: SPHINX_OPTS="-W --keep-going" make -C doc html
 
   rust-tests:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -69,7 +69,7 @@ jobs:
       fail-fast: false
       matrix:
         python: ['3.8', '3.9', '3.10', '3.11', '3.12']
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -94,20 +94,22 @@ jobs:
       matrix:
         arch: [x86_64, aarch64]
         python: [cp38]  # Using limited ABI, so newer versions are not required
-    runs-on: ubuntu-22.04
+        # Set os based on arch
+        include:
+          - arch: x86_64
+            os: ubuntu-24.04
+          - arch: aarch64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-        if: matrix.arch != 'x86_64'
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
       - uses: Swatinem/rust-cache@v2
-      - uses: pypa/cibuildwheel@v2.22.0
+      - uses: pypa/cibuildwheel@v2.23.0
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_BUILD: ${{ matrix.python }}-manylinux*
@@ -141,7 +143,7 @@ jobs:
           cache: 'pip'
       - name: Install pipx
         run: pip install pipx
-      - uses: pypa/cibuildwheel@v2.22.0
+      - uses: pypa/cibuildwheel@v2.23.0
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_BUILD: ${{ matrix.python }}-macos*
@@ -151,7 +153,7 @@ jobs:
           path: ./wheelhouse/*.whl
 
   sdist:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -171,7 +173,7 @@ jobs:
 
   combine-wheels:
     needs: [linux-wheels, macos-wheels, sdist]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Create paths
         run: mkdir -p dist wheelhouse
