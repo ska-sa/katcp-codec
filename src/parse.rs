@@ -345,7 +345,7 @@ impl Parser {
     #[pyo3(name = "append")]
     fn py_append<'py>(&mut self, data: &Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyList>> {
         let py = data.py();
-        let out = PyList::empty_bound(py);
+        let out = PyList::empty(py);
         for result in self.append(data.as_bytes()) {
             match result {
                 Ok(msg) => {

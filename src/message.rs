@@ -164,7 +164,7 @@ impl PyMessage {
             arguments,
         };
         let size = message.write_size();
-        PyBytes::new_bound_with(py, size, |bytes: &mut [u8]| {
+        PyBytes::new_with(py, size, |bytes: &mut [u8]| {
             let remain = message.write_out(bytes.as_out());
             if !remain.is_empty() {
                 // This should be unreachable, because we hold the GIL.
@@ -178,18 +178,22 @@ impl PyMessage {
     }
 }
 
-impl<N, A> ToPyObject for Message<N, A>
+impl<'py, N, A> IntoPyObject<'py> for Message<N, A>
 where
     N: AsRef<[u8]>,
     A: AsRef<[u8]>,
 {
-    fn to_object(&self, py: Python<'_>) -> PyObject {
+    type Target = PyMessage;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let py_msg = PyMessage::new(
             self.mtype,
-            PyBytes::new_bound(py, self.name.as_ref()).unbind(),
+            PyBytes::new(py, self.name.as_ref()).unbind(),
             self.mid,
-            PyList::new_bound(py, self.arguments.iter().map(|x| Cow::from(x.as_ref()))).unbind(),
+            PyList::new(py, self.arguments.iter().map(|x| Cow::from(x.as_ref())))?.unbind(),
         );
-        py_msg.into_py(py)
+        py_msg.into_pyobject(py)
     }
 }
