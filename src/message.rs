@@ -21,73 +21,12 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::{PyBytes, PyList};
 use pyo3::PyTraverseError;
-use std::borrow::Cow;
 use uninit::prelude::*;
 
 pub use katcp_codec_fsm::MessageType;
 
-/// A katcp message. The name and arguments can either own their data or
-/// reference existing data from a buffer.
-///
-/// The katcp specification is byte-oriented, so the text fields are \[u8\]
-/// rather than [str]. The name has a restricted character set that ensures
-/// it can be decoded as ASCII (or UTF-8) but the arguments may contain
-/// arbitrary bytes.
-///
-/// The message ID and name are *not* validated when constructed with
-/// [Message::new]. Using an invalid value for either will not panic, but
-/// will lead to invalid formatting from [Message::write_out].
-#[derive(Clone, Eq, Debug)]
-pub struct Message<N, A>
-where
-    N: AsRef<[u8]>,
-    A: AsRef<[u8]>,
-{
-    /// Message type
-    pub mtype: MessageType,
-    /// Message name
-    pub name: N,
-    /// Message ID, if present. It must be positive.
-    pub mid: Option<u32>,
-    /// Message arguments
-    pub arguments: Vec<A>,
-}
-
-impl<N, A, N2, A2> PartialEq<Message<N2, A2>> for Message<N, A>
-where
-    N: AsRef<[u8]> + PartialEq<N2>,
-    A: AsRef<[u8]> + PartialEq<A2>,
-    N2: AsRef<[u8]>,
-    A2: AsRef<[u8]>,
-{
-    fn eq(&self, other: &Message<N2, A2>) -> bool {
-        self.mtype == other.mtype
-            && self.name == other.name
-            && self.mid == other.mid
-            && self.arguments == other.arguments
-    }
-}
-
-impl<N, A> Message<N, A>
-where
-    N: AsRef<[u8]>,
-    A: AsRef<[u8]>,
-{
-    /// Create a new message.
-    pub fn new(
-        mtype: MessageType,
-        name: impl Into<N>,
-        mid: Option<u32>,
-        arguments: impl Into<Vec<A>>,
-    ) -> Self {
-        Self {
-            mtype,
-            name: name.into(),
-            mid,
-            arguments: arguments.into(),
-        }
-    }
-}
+use crate::format::Message as FormatMessage;
+use crate::parse::Message as ParseMessage;
 
 /// Message type used for interaction with Python.
 #[pyclass(name = "Message", module = "katcp_codec._lib", get_all, set_all)]
@@ -147,7 +86,7 @@ impl PyMessage {
         // TODO: this is creating a new vector to hold the arguments.
         // Can we use another trait to handle directly iterating the PyList?
         let arguments: Vec<PyBackedBytes> = self.arguments.extract(py)?;
-        let message = Message {
+        let message = FormatMessage {
             mtype: self.mtype,
             name: name.as_bytes(),
             mid: self.mid,
@@ -168,11 +107,7 @@ impl PyMessage {
     }
 }
 
-impl<'py, N, A> IntoPyObject<'py> for Message<N, A>
-where
-    N: AsRef<[u8]>,
-    A: AsRef<[u8]>,
-{
+impl<'py> IntoPyObject<'py> for ParseMessage {
     type Target = PyMessage;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
@@ -180,9 +115,9 @@ where
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let py_msg = PyMessage::new(
             self.mtype,
-            PyBytes::new(py, self.name.as_ref()).unbind(),
+            PyBytes::new(py, self.name()).unbind(),
             self.mid,
-            PyList::new(py, self.arguments.iter().map(|x| Cow::from(x.as_ref())))?.unbind(),
+            PyList::new(py, self.arguments().map(|x| PyBytes::new(py, x)))?.unbind(),
         );
         py_msg.into_pyobject(py)
     }

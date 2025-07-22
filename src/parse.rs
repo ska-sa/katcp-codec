@@ -13,19 +13,71 @@
  * limitations under the License.
  */
 
+use adjacent_pair_iterator::AdjacentPairIterator;
 use pyo3::buffer::{Element, PyBuffer, ReadOnlyCell};
 use pyo3::exceptions::{PyBufferError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
-use std::borrow::Cow;
 use thiserror::Error;
 
-use katcp_codec_fsm::{Action, State};
+use katcp_codec_fsm::{Action, MessageType, State};
 
-use crate::message::{Message, MessageType};
 use crate::tables::PARSER_TABLE;
 
-type ParsedMessage<'data> = Message<Cow<'data, [u8]>, Cow<'data, [u8]>>;
+/// A katcp message produced by parsing.
+///
+/// To minimise the number of memory allocations, the name and the arguments
+/// are all stored back-to-back in a [Vec<u8>], and the individual fields just
+/// store offsets into this vector. This allows a message with many arguments
+/// to use only O(1) allocations.
+#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
+pub struct Message {
+    pub mtype: MessageType,
+    /// Message ID, if present. It must be positive.
+    pub mid: Option<u32>,
+    /// Starting position of each argument in [storage]. A final element
+    /// is added to indicate the end of the last argument.
+    argument_start: Vec<usize>,
+    storage: Vec<u8>,
+}
+
+impl Message {
+    /// Get the name of the message
+    pub fn name(&self) -> &[u8] {
+        &self.storage[..self.argument_start[0]]
+    }
+
+    /// Iterate over the arguments of the message
+    pub fn arguments(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.argument_start
+            .iter()
+            .adjacent_pairs()
+            .map(|(&a, &b)| &self.storage[a..b])
+    }
+
+    /// Construct a message. This is inefficient and only used for tests.
+    #[cfg(test)]
+    pub fn new<N, I, A>(mtype: MessageType, name: N, mid: Option<u32>, arguments: I) -> Self
+    where
+        N: AsRef<[u8]>,
+        I: IntoIterator<Item = A>,
+        A: AsRef<[u8]>,
+    {
+        let name = name.as_ref();
+        let mut msg = Message {
+            mtype,
+            mid,
+            argument_start: vec![name.len()],
+            storage: name.to_vec(),
+        };
+        for argument in arguments.into_iter() {
+            msg.storage.extend_from_slice(argument.as_ref());
+            msg.argument_start.push(msg.storage.len());
+        }
+        msg
+    }
+}
 
 /// Error returned from parsing.
 #[derive(Error, Clone, Debug, Eq, PartialEq)]
@@ -48,26 +100,12 @@ impl ParseError {
 /// Abstract read access to either [T] or [ReadOnlyCell<T>].
 pub trait ReadAccess<T: Copy>: Sized {
     fn read(&self) -> T;
-
-    /// Extend a `Cow<'_, [T]>` with new elements.
-    fn extend_cow<'a>(cow: &mut Cow<'a, [T]>, elements: &'a [Self]) {
-        cow.to_mut().extend(elements.iter().map(Self::read));
-    }
 }
 
 impl<T: Copy> ReadAccess<T> for T {
     #[inline]
     fn read(&self) -> T {
         *self
-    }
-
-    // Special-case this to reuse the memory when possible
-    fn extend_cow<'a>(cow: &mut Cow<'a, [T]>, elements: &'a [Self]) {
-        if cow.is_empty() {
-            *cow = Cow::from(elements);
-        } else {
-            cow.to_mut().extend_from_slice(elements);
-        }
     }
 }
 
@@ -86,7 +124,6 @@ where
 {
     parser: &'parser mut Parser,
     data: &'data [T],
-    transient: Transient<'data>,
 }
 
 impl<'parser, 'data, T> Iterator for ParseIterator<'parser, 'data, T>
@@ -94,21 +131,13 @@ where
     'data: 'parser,
     T: ReadAccess<u8>,
 {
-    type Item = Result<ParsedMessage<'data>, ParseError>;
+    type Item = Result<Message, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (msg, tail) = self.parser.next_message(self.data, &mut self.transient);
+        let (msg, tail) = self.parser.next_message(self.data);
         self.data = tail;
         msg
     }
-}
-
-/// Parser state that can only live as long as the iterator returned by [Parser::append].
-struct Transient<'data> {
-    /// Name which *replaces* [Parser::name]
-    name: Cow<'data, [u8]>,
-    /// Arguments to *append* to [Parser::arguments]
-    arguments: Vec<Cow<'data, [u8]>>,
 }
 
 /// Message parser.
@@ -125,12 +154,13 @@ pub struct Parser {
     max_line_length: usize,
     /// Message type, or [None] if we haven't parsed it yet
     mtype: Option<MessageType>,
-    /// Name (only allocated if [Parser::append] ends partway through the message)
-    name: Vec<u8>,
     /// Message ID, or [None] if there isn't one or we haven't parsed one yet
     mid: Option<u32>,
-    /// Fully-parsed arguments, excluding those in the current [Transient]
-    arguments: Vec<Vec<u8>>,
+    /// Positions that arguments start in [Parser::storage]. This is empty if
+    /// we haven't yet gone past state Name.
+    argument_start: Vec<usize>,
+    /// Storage for name and arguments
+    storage: Vec<u8>,
     /// Current error, if we are in an error state
     error: Option<ParseError>,
 }
@@ -143,9 +173,9 @@ impl Parser {
             line_length: 0,
             max_line_length,
             mtype: None,
-            name: vec![],
             mid: None,
-            arguments: vec![],
+            argument_start: vec![],
+            storage: vec![],
             error: None,
         }
     }
@@ -163,14 +193,14 @@ impl Parser {
         self.state = State::Start;
         self.line_length = 0;
         self.mtype = None;
-        self.name.clear();
         self.mid = None;
-        self.arguments.clear();
+        self.argument_start.clear();
+        self.storage.clear();
         self.error = None;
     }
 
     /// Signal an error at a particular position on a line.
-    fn error_at(&mut self, transient: &mut Transient, message: impl Into<String>, position: usize) {
+    fn error_at(&mut self, message: impl Into<String>, position: usize) {
         if self.state != State::ErrorEndOfLine {
             self.state = State::Error;
         }
@@ -178,20 +208,13 @@ impl Parser {
             self.error = Some(ParseError::new(message.into(), position));
         }
         // Free up some memory early
-        self.arguments.clear();
-        transient.arguments.clear();
+        self.argument_start.clear();
+        self.storage.clear();
     }
 
     /// Signal an error at the current position.
-    fn error(&mut self, transient: &mut Transient, message: impl Into<String>) {
-        self.error_at(transient, message, self.line_length + 1);
-    }
-
-    /// Return the parser and a [Transient] to their initial states.
-    fn reset_transient(&mut self, transient: &mut Transient<'_>) {
-        self.reset();
-        transient.name = Cow::default();
-        transient.arguments.clear();
+    fn error(&mut self, message: impl Into<String>) {
+        self.error_at(message, self.line_length + 1);
     }
 
     /// Apply an [Action] to the parser.
@@ -199,19 +222,18 @@ impl Parser {
     /// `position` is the number of characters that appeared on the line
     /// prior to `chunk`. On the other hand, [Parser::line_length] includes
     /// the length of the chunk.
-    fn apply<'data, T: ReadAccess<u8>>(
+    fn apply<T: ReadAccess<u8>>(
         &mut self,
         action: &Action,
-        chunk: &'data [T],
-        transient: &mut Transient<'data>,
+        chunk: &[T],
         position: usize,
-    ) -> Result<Option<ParsedMessage<'data>>, ParseError> {
+    ) -> Result<Option<Message>, ParseError> {
         match action {
             Action::SetType(mtype) => {
                 self.mtype = Some(*mtype);
             }
             Action::Name => {
-                T::extend_cow(&mut transient.name, chunk);
+                self.storage.extend(chunk.iter().map(T::read));
             }
             Action::Id => {
                 // TODO: optimise this using the whole chunk at once
@@ -222,45 +244,42 @@ impl Parser {
                     if let Ok(value) = i32::try_from(mid) {
                         self.mid = Some(value as u32);
                     } else {
-                        self.error_at(transient, "Message ID overflowed", position);
+                        self.error_at("Message ID overflowed", position);
                         break;
                     }
                 }
             }
             Action::Argument => {
-                T::extend_cow(transient.arguments.last_mut().unwrap(), chunk);
+                self.storage.extend(chunk.iter().map(T::read));
             }
             Action::ArgumentEscaped(c) => {
-                transient.arguments.last_mut().unwrap().to_mut().push(*c);
+                self.storage.push(*c);
             }
             Action::ResetLineLength => {
                 self.line_length = 0;
             }
             Action::Nothing => {}
             Action::Error => {
-                self.error_at(transient, "Invalid character", position);
+                self.error_at("Invalid character", position);
             }
         }
 
         match self.state {
             State::EndOfLine => {
-                let arguments: Vec<_> = std::mem::take(&mut self.arguments)
-                    .into_iter()
-                    .map(Cow::from)
-                    .chain(std::mem::take(&mut transient.arguments))
-                    .collect();
-                let msg = Message::new(
-                    self.mtype.take().unwrap(),
-                    std::mem::take(&mut transient.name),
-                    self.mid,
-                    arguments,
-                );
-                self.reset_transient(transient);
+                // Indicate end of last argument (or of name, if no arguments)
+                self.argument_start.push(self.storage.len());
+                let msg = Message {
+                    mtype: self.mtype.take().unwrap(),
+                    mid: self.mid,
+                    argument_start: std::mem::take(&mut self.argument_start),
+                    storage: std::mem::take(&mut self.storage),
+                };
+                self.reset();
                 Ok(Some(msg))
             }
             State::ErrorEndOfLine => {
                 let error = self.error.take().unwrap();
-                self.reset_transient(transient);
+                self.reset();
                 Err(error)
             }
             _ => Ok(None),
@@ -271,16 +290,15 @@ impl Parser {
     fn next_message<'data, T: ReadAccess<u8>>(
         &mut self,
         mut data: &'data [T],
-        transient: &mut Transient<'data>,
-    ) -> (Option<Result<ParsedMessage<'data>, ParseError>>, &'data [T]) {
+    ) -> (Option<Result<Message, ParseError>>, &'data [T]) {
         while !data.is_empty() {
             if self.line_length >= self.max_line_length && self.state != State::Error {
-                self.error(transient, "Line too long");
+                self.error("Line too long");
             }
 
             let entry = &PARSER_TABLE[self.state][data[0].read()];
             if entry.create_argument {
-                transient.arguments.push(Cow::default());
+                self.argument_start.push(self.storage.len());
             }
             self.state = entry.state;
             let mut p = 1; // number of bytes we're consuming this round
@@ -304,7 +322,7 @@ impl Parser {
                 self.line_length += p;
             }
 
-            let result = self.apply(&entry.action, &data[..p], transient, position);
+            let result = self.apply(&entry.action, &data[..p], position);
             data = &data[p..];
 
             match result {
@@ -317,13 +335,6 @@ impl Parser {
                 }
             }
         }
-        // Return any leftover state to the primary parser state
-        self.name = std::mem::take(&mut transient.name).into_owned();
-        self.arguments.extend(
-            std::mem::take(&mut transient.arguments)
-                .into_iter()
-                .map(|x| x.into_owned()),
-        );
         (None, data)
     }
 
@@ -340,19 +351,9 @@ impl Parser {
         D: AsRef<[T]> + ?Sized,
         T: ReadAccess<u8>,
     {
-        let mut transient = Transient {
-            name: Cow::from(std::mem::take(&mut self.name)),
-            arguments: Default::default(),
-        };
-        // If there is at least one argument in the state, transfer the last
-        // one to the Transient so that it can be extended.
-        if let Some(last_arg) = self.arguments.pop() {
-            transient.arguments.push(Cow::from(last_arg));
-        }
         ParseIterator {
             parser: self,
             data: data.as_ref(),
-            transient,
         }
     }
 
@@ -418,19 +419,19 @@ mod test {
     /// Helper macro for constructing messages for comparison
     macro_rules! msg {
         ( $mtype:expr, $name:literal, $mid:expr ) => {
-            $crate::message::Message::new(
+            $crate::parse::Message::new(
                 $mtype,
-                std::borrow::Cow::from($name.as_slice()),
+                $name,
                 $mid,
-                std::vec![],
+                std::vec::Vec::<&[u8]>::new(),
             )
         };
         ( $mtype:expr, $name:literal, $mid:expr, $($arg:literal),* $(,)? ) => {
-            $crate::message::Message::new(
+            $crate::parse::Message::new(
                 $mtype,
-                std::borrow::Cow::from($name.as_slice()),
+                $name.as_slice(),
                 $mid,
-                std::vec![$( Cow::from($arg.as_slice()) ),*],
+                std::vec![$( $arg.as_slice() ),*],
             )
         };
     }
@@ -477,7 +478,7 @@ mod test {
         b" \t\n\r?blank-lines\n\n",
         msg!(Request, b"blank-lines", None),
     )]
-    fn test_simple(#[case] input: &[u8], #[case] message: ParsedMessage, mut parser: Parser) {
+    fn test_simple(#[case] input: &[u8], #[case] message: Message, mut parser: Parser) {
         let messages: Vec<_> = parser.append(input).collect();
         assert_eq!(messages.as_slice(), &[Ok(message)]);
     }

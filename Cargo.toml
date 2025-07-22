@@ -23,6 +23,7 @@ name = "_lib"
 crate-type = ["cdylib", "rlib"]  # rlib included just for testing
 
 [dependencies]
+adjacent-pair-iterator = "1.0.0"
 enum-map = "2.7.3"
 itoa = "1.0.10"
 katcp-codec-fsm = { path = "crates/fsm", features = ["pyo3"] }

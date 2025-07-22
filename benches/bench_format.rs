@@ -15,7 +15,8 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
-use _lib::message::{Message, MessageType};
+use _lib::format::Message;
+use _lib::message::MessageType;
 
 fn format(c: &mut Criterion) {
     let mut group = c.benchmark_group("format");
