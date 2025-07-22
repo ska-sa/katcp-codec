@@ -13,7 +13,8 @@
  * limitations under the License.
  */
 
-use pyo3::exceptions::PyValueError;
+use pyo3::buffer::{Element, PyBuffer, ReadOnlyCell};
+use pyo3::exceptions::{PyBufferError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use std::borrow::Cow;
@@ -44,19 +45,54 @@ impl ParseError {
     }
 }
 
+/// Abstract read access to either [T] or [ReadOnlyCell<T>].
+pub trait ReadAccess<T: Copy>: Sized {
+    fn read(&self) -> T;
+
+    /// Extend a `Cow<'_, [T]>` with new elements.
+    fn extend_cow<'a>(cow: &mut Cow<'a, [T]>, elements: &'a [Self]) {
+        cow.to_mut().extend(elements.iter().map(Self::read));
+    }
+}
+
+impl<T: Copy> ReadAccess<T> for T {
+    #[inline]
+    fn read(&self) -> T {
+        *self
+    }
+
+    // Special-case this to reuse the memory when possible
+    fn extend_cow<'a>(cow: &mut Cow<'a, [T]>, elements: &'a [Self]) {
+        if cow.is_empty() {
+            *cow = Cow::from(elements);
+        } else {
+            cow.to_mut().extend_from_slice(elements);
+        }
+    }
+}
+
+impl<T: Element> ReadAccess<T> for ReadOnlyCell<T> {
+    #[inline]
+    fn read(&self) -> T {
+        self.get()
+    }
+}
+
 /// Iterator implementation for [Parser::append].
-pub struct ParseIterator<'parser, 'data>
+pub struct ParseIterator<'parser, 'data, T>
 where
     'data: 'parser,
+    T: ReadAccess<u8>,
 {
     parser: &'parser mut Parser,
-    data: &'data [u8],
+    data: &'data [T],
     transient: Transient<'data>,
 }
 
-impl<'parser, 'data> Iterator for ParseIterator<'parser, 'data>
+impl<'parser, 'data, T> Iterator for ParseIterator<'parser, 'data, T>
 where
     'data: 'parser,
+    T: ReadAccess<u8>,
 {
     type Item = Result<ParsedMessage<'data>, ParseError>;
 
@@ -97,17 +133,6 @@ pub struct Parser {
     arguments: Vec<Vec<u8>>,
     /// Current error, if we are in an error state
     error: Option<ParseError>,
-}
-
-/// Extend a `Cow<'_, [T]>` with new elements.
-///
-/// This is special-cased to borrow the elements if the [Cow] was empty.
-fn extend_cow<'a>(cow: &mut Cow<'a, [u8]>, elements: &'a [u8]) {
-    if cow.is_empty() {
-        *cow = Cow::from(elements);
-    } else {
-        cow.to_mut().extend_from_slice(elements);
-    }
 }
 
 impl Parser {
@@ -174,10 +199,10 @@ impl Parser {
     /// `position` is the number of characters that appeared on the line
     /// prior to `chunk`. On the other hand, [Parser::line_length] includes
     /// the length of the chunk.
-    fn apply<'data>(
+    fn apply<'data, T: ReadAccess<u8>>(
         &mut self,
         action: &Action,
-        chunk: &'data [u8],
+        chunk: &'data [T],
         transient: &mut Transient<'data>,
         position: usize,
     ) -> Result<Option<ParsedMessage<'data>>, ParseError> {
@@ -186,14 +211,14 @@ impl Parser {
                 self.mtype = Some(*mtype);
             }
             Action::Name => {
-                extend_cow(&mut transient.name, chunk);
+                T::extend_cow(&mut transient.name, chunk);
             }
             Action::Id => {
                 // TODO: optimise this using the whole chunk at once
                 for ch in chunk.iter() {
                     // Compute the update in 64-bit to detect overflow at the end
                     let mid = self.mid.unwrap_or(0) as u64;
-                    let mid = mid * 10 + ((*ch - b'0') as u64);
+                    let mid = mid * 10 + ((ch.read() - b'0') as u64);
                     if let Ok(value) = i32::try_from(mid) {
                         self.mid = Some(value as u32);
                     } else {
@@ -203,7 +228,7 @@ impl Parser {
                 }
             }
             Action::Argument => {
-                extend_cow(transient.arguments.last_mut().unwrap(), chunk);
+                T::extend_cow(transient.arguments.last_mut().unwrap(), chunk);
             }
             Action::ArgumentEscaped(c) => {
                 transient.arguments.last_mut().unwrap().to_mut().push(*c);
@@ -243,20 +268,17 @@ impl Parser {
     }
 
     /// Consume data until new end-of-line is seen, returning the message if any.
-    fn next_message<'data>(
+    fn next_message<'data, T: ReadAccess<u8>>(
         &mut self,
-        mut data: &'data [u8],
+        mut data: &'data [T],
         transient: &mut Transient<'data>,
-    ) -> (
-        Option<Result<ParsedMessage<'data>, ParseError>>,
-        &'data [u8],
-    ) {
+    ) -> (Option<Result<ParsedMessage<'data>, ParseError>>, &'data [T]) {
         while !data.is_empty() {
             if self.line_length >= self.max_line_length && self.state != State::Error {
                 self.error(transient, "Line too long");
             }
 
-            let entry = &PARSER_TABLE[self.state][data[0]];
+            let entry = &PARSER_TABLE[self.state][data[0].read()];
             if entry.create_argument {
                 transient.arguments.push(Cow::default());
             }
@@ -270,7 +292,7 @@ impl Parser {
                 } else {
                     std::cmp::min(data.len(), self.max_line_length - self.line_length)
                 };
-                while p < max_len && fast_table[data[p]] {
+                while p < max_len && fast_table[data[p].read()] {
                     p += 1;
                 }
             }
@@ -310,12 +332,13 @@ impl Parser {
     /// The data is only consumed as a result of iteration. Dropping the
     /// iterator without fully consuming it has undefined results.
     #[must_use = "Must consume the returned iterator for anything to happen"]
-    pub fn append<'parser, 'data, D>(
+    pub fn append<'parser, 'data, D, T>(
         &'parser mut self,
         data: &'data D,
-    ) -> ParseIterator<'parser, 'data>
+    ) -> ParseIterator<'parser, 'data, T>
     where
-        D: AsRef<[u8]> + ?Sized,
+        D: AsRef<[T]> + ?Sized,
+        T: ReadAccess<u8>,
     {
         let mut transient = Transient {
             name: Cow::from(std::mem::take(&mut self.name)),
@@ -332,21 +355,14 @@ impl Parser {
             transient,
         }
     }
-}
 
-#[pymethods]
-impl Parser {
-    #[new]
-    fn py_new(max_line_length: usize) -> Self {
-        Self::new(max_line_length)
-    }
-
-    // TODO: support buffer protocol?
-    #[pyo3(name = "append")]
-    fn py_append<'py>(&mut self, data: &Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyList>> {
-        let py = data.py();
+    fn py_append_impl<'py, T: ReadAccess<u8>>(
+        &mut self,
+        py: Python<'py>,
+        data: &[T],
+    ) -> PyResult<Bound<'py, PyList>> {
         let out = PyList::empty(py);
-        for result in self.append(data.as_bytes()) {
+        for result in self.append(data) {
             match result {
                 Ok(msg) => {
                     out.append(msg)?;
@@ -357,6 +373,27 @@ impl Parser {
             }
         }
         Ok(out)
+    }
+}
+
+#[pymethods]
+impl Parser {
+    #[new]
+    fn py_new(max_line_length: usize) -> Self {
+        Self::new(max_line_length)
+    }
+
+    #[pyo3(name = "append")]
+    fn py_append<'py>(&mut self, data: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+        if let Ok(bytes) = data.downcast::<PyBytes>() {
+            self.py_append_impl(data.py(), bytes.as_bytes())
+        } else {
+            let buf: PyBuffer<u8> = data.extract()?;
+            let slice = buf
+                .as_slice(data.py())
+                .ok_or_else(|| PyBufferError::new_err("Buffer object is not C-contiguous"))?;
+            self.py_append_impl(data.py(), slice)
+        }
     }
 
     #[pyo3(name = "reset")]
