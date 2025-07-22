@@ -15,7 +15,7 @@
 
 //! The basic katcp message type
 
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::gc::PyVisit;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
@@ -93,9 +93,9 @@ where
 #[pyclass(name = "Message", module = "katcp_codec._lib", get_all, set_all)]
 pub struct PyMessage {
     pub mtype: MessageType,
-    pub name: Option<Py<PyBytes>>, // Option only to support __clear__
+    pub name: Py<PyBytes>,
     pub mid: Option<u32>,
-    pub arguments: Option<Py<PyList>>, // Option only to support __clear__
+    pub arguments: Py<PyList>,
 }
 
 impl PyMessage {
@@ -108,9 +108,9 @@ impl PyMessage {
     ) -> Self {
         Self {
             mtype,
-            name: Some(name),
+            name,
             mid,
-            arguments: Some(arguments),
+            arguments,
         }
     }
 }
@@ -130,33 +130,23 @@ impl PyMessage {
 
     // See https://pyo3.rs/v0.21.2/class/protocols#garbage-collector-integration
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        if let Some(name) = &self.name {
-            visit.call(name)?;
-        }
-        if let Some(arguments) = &self.arguments {
-            visit.call(arguments)?;
-        }
+        visit.call(&self.name)?;
+        visit.call(&self.arguments)?;
         Ok(())
     }
 
     fn __clear__(&mut self) {
-        self.name = None;
-        self.arguments = None;
+        // It should be safe not to do anything here:
+        // - `name` is a `bytes` which cannot hold any references
+        // - `arguments` is a `list` and Python will clear all references held
+        //   by the list.
     }
 
     fn __bytes__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let name = self
-            .name
-            .as_ref()
-            .ok_or_else(|| PyValueError::new_err("name is None"))?;
-        let name = name.bind(py);
-        let arguments = self
-            .arguments
-            .as_ref()
-            .ok_or_else(|| PyValueError::new_err("arguments is None"))?;
+        let name = self.name.bind_borrowed(py);
         // TODO: this is creating a new vector to hold the arguments.
         // Can we use another trait to handle directly iterating the PyList?
-        let arguments: Vec<PyBackedBytes> = arguments.bind(py).extract()?;
+        let arguments: Vec<PyBackedBytes> = self.arguments.extract(py)?;
         let message = Message {
             mtype: self.mtype,
             name: name.as_bytes(),
