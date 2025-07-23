@@ -125,6 +125,8 @@ jobs:
       matrix:
         arch: [x86_64, arm64]
         python: [cp38, cp39, cp310, cp311]  # From 3.11 we can use the limited ABI
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "10.12"  # Seems to be needed due to Rust version
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
