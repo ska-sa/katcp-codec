@@ -312,7 +312,11 @@ impl Parser {
                 } else {
                     std::cmp::min(data.len(), self.max_line_length - self.line_length)
                 };
-                while p < max_len && fast_table[data[p].read()] {
+                // Using `capped` instead of using `data` directly seems to help
+                // the compiler know that it doesn't need to check for out-of-bounds
+                // access inside the loop.
+                let capped = &data[..max_len];
+                while p < max_len && fast_table[capped[p].read()] {
                     p += 1;
                 }
             }
