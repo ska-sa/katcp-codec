@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+//! Parse katcp messages.
+
 use adjacent_pair_iterator::AdjacentPairIterator;
 use pyo3::buffer::{Element, PyBuffer, ReadOnlyCell};
 use pyo3::exceptions::{PyBufferError, PyValueError};
@@ -27,7 +29,7 @@ use crate::tables::PARSER_TABLE;
 /// A katcp message produced by parsing.
 ///
 /// To minimise the number of memory allocations, the name and the arguments
-/// are all stored back-to-back in a [Vec<u8>], and the individual fields just
+/// are all stored back-to-back in a [`Vec<u8>`], and the individual fields just
 /// store offsets into this vector. This allows a message with many arguments
 /// to use only O(1) allocations.
 #[derive(Clone, Debug)]
@@ -97,7 +99,7 @@ impl ParseError {
     }
 }
 
-/// Abstract read access to either [T] or [ReadOnlyCell<T>].
+/// Abstract read access to either T or [`ReadOnlyCell<T>`].
 pub trait ReadAccess<T: Copy>: Sized {
     fn read(&self) -> T;
 }

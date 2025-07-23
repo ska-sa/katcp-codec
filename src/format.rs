@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+//! Format katcp messages.
+
 use std::ops::AddAssign;
 use uninit::prelude::*;
 

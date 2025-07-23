@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-//! The basic katcp message type
+//! Python wrapper for katcp messages.
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::gc::PyVisit;
