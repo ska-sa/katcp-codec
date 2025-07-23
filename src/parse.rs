@@ -17,7 +17,7 @@ use adjacent_pair_iterator::AdjacentPairIterator;
 use pyo3::buffer::{Element, PyBuffer, ReadOnlyCell};
 use pyo3::exceptions::{PyBufferError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList};
+use pyo3::types::PyList;
 use thiserror::Error;
 
 use katcp_codec_fsm::{Action, MessageType, State};
@@ -356,25 +356,6 @@ impl Parser {
             data: data.as_ref(),
         }
     }
-
-    fn py_append_impl<'py, T: ReadAccess<u8>>(
-        &mut self,
-        py: Python<'py>,
-        data: &[T],
-    ) -> PyResult<Bound<'py, PyList>> {
-        let out = PyList::empty(py);
-        for result in self.append(data) {
-            match result {
-                Ok(msg) => {
-                    out.append(msg)?;
-                }
-                Err(error) => {
-                    out.append(PyValueError::new_err(error.to_string()).into_value(py))?;
-                }
-            }
-        }
-        Ok(out)
-    }
 }
 
 #[pymethods]
@@ -385,16 +366,26 @@ impl Parser {
     }
 
     #[pyo3(name = "append")]
-    fn py_append<'py>(&mut self, data: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
-        if let Ok(bytes) = data.downcast::<PyBytes>() {
-            self.py_append_impl(data.py(), bytes.as_bytes())
-        } else {
-            let buf: PyBuffer<u8> = data.extract()?;
-            let slice = buf
-                .as_slice(data.py())
-                .ok_or_else(|| PyBufferError::new_err("Buffer object is not C-contiguous"))?;
-            self.py_append_impl(data.py(), slice)
+    fn py_append<'py>(
+        &mut self,
+        py: Python<'py>,
+        buf: PyBuffer<u8>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        let slice = buf
+            .as_slice(py)
+            .ok_or_else(|| PyBufferError::new_err("Buffer object is not C-contiguous"))?;
+        let out = PyList::empty(py);
+        for result in self.append(slice) {
+            match result {
+                Ok(msg) => {
+                    out.append(msg)?;
+                }
+                Err(error) => {
+                    out.append(PyValueError::new_err(error.to_string()).into_value(py))?;
+                }
+            }
         }
+        Ok(out)
     }
 
     #[pyo3(name = "reset")]
