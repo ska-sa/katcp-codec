@@ -38,19 +38,19 @@ pub struct Message {
     pub mtype: MessageType,
     /// Message ID, if present. It must be positive.
     pub mid: Option<u32>,
-    /// Starting position of each argument in [storage]. A final element
-    /// is added to indicate the end of the last argument.
+    /// Starting position of each argument in [Message::storage]. A final
+    /// element is added to indicate the end of the last argument.
     argument_start: Vec<usize>,
     storage: Vec<u8>,
 }
 
 impl Message {
-    /// Get the name of the message
+    /// Get the name of the message.
     pub fn name(&self) -> &[u8] {
         &self.storage[..self.argument_start[0]]
     }
 
-    /// Iterate over the arguments of the message
+    /// Iterate over the arguments of the message.
     pub fn arguments(&self) -> impl ExactSizeIterator<Item = &[u8]> {
         self.argument_start
             .iter()
