@@ -14,6 +14,7 @@
  */
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 use _lib::format::Message;
 use _lib::message::MessageType;
@@ -37,7 +38,7 @@ fn format(c: &mut Criterion) {
             let name = if escapes { "escapes" } else { "no escapes" };
             group.throughput(Throughput::Bytes(len as u64));
             group.bench_function(BenchmarkId::new(name, args), |b| {
-                b.iter_with_large_drop(|| msg.to_vec());
+                b.iter_with_large_drop(|| black_box(msg.to_vec()));
             });
         }
     }

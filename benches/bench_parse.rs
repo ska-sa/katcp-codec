@@ -14,6 +14,7 @@
  */
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 use _lib::format::Message as FormatMessage;
 use _lib::message::MessageType;
@@ -39,7 +40,7 @@ fn parse(c: &mut Criterion) {
             group.throughput(Throughput::Bytes(encoded.len() as u64));
             let name = if escapes { "escapes" } else { "no escapes" };
             group.bench_function(BenchmarkId::new(name, args), |b| {
-                b.iter(|| parser.append(&encoded).count());
+                b.iter(|| black_box(parser.append(black_box(&encoded))).count());
             });
         }
     }
