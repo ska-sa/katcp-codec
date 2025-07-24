@@ -31,7 +31,7 @@ fn parse(c: &mut Criterion) {
         for args in [1, 10, 100, 1000, 10000] {
             let msg: FormatMessage<&[u8], &[u8]> = FormatMessage::new(
                 MessageType::Request,
-                b"test_message".as_slice(),
+                b"test-message".as_slice(),
                 Some(12345678),
                 vec![arg_value; args],
             );
