@@ -24,6 +24,7 @@ lto = true
 [lib]
 name = "_lib"
 crate-type = ["cdylib", "rlib"]  # rlib included just for testing
+bench = false
 
 [dependencies]
 adjacent-pair-iterator = "1.0.0"
