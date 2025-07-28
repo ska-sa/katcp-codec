@@ -43,9 +43,9 @@ def parser(max_line_length) -> Parser:
             [Message(MessageType.REPLY, b"reply", 2, [b""])],
         ),
         (
-            b"\n\t\n#inform\t\\n\xFF\r!hello \n",
+            b"\n\t\n#inform\t\\n\xff\r!hello \n",
             [
-                Message(MessageType.INFORM, b"inform", None, [b"\n\xFF"]),
+                Message(MessageType.INFORM, b"inform", None, [b"\n\xff"]),
                 Message(MessageType.REPLY, b"hello", None, []),
             ],
         ),
