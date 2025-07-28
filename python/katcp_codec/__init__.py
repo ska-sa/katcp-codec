@@ -85,7 +85,7 @@ class Message:
 
 
 def _message_from_rust(
-    message: Union[_lib.Message, ValueError]
+    message: Union[_lib.Message, ValueError],
 ) -> Union[Message, ValueError]:
     if isinstance(message, ValueError):
         return message

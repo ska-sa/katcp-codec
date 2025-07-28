@@ -25,7 +25,7 @@ def test_bad_mid(mid: int) -> None:
         Message(MessageType.REQUEST, b"hello", mid, [])
 
 
-@pytest.mark.parametrize("name", [b"", b"0", b"underscores_not_allowed", b"t\xFF"])
+@pytest.mark.parametrize("name", [b"", b"0", b"underscores_not_allowed", b"t\xff"])
 def test_bad_name(name: bytes) -> None:
     with pytest.raises(ValueError):
         Message(MessageType.REQUEST, name, None, [])
@@ -40,7 +40,7 @@ def test_bad_name(name: bytes) -> None:
         ),
         (
             Message(
-                MessageType.REPLY, b"test-mid", 2147483647, [b"", b"\r\n\t\x1B\0\\ "]
+                MessageType.REPLY, b"test-mid", 2147483647, [b"", b"\r\n\t\x1b\0\\ "]
             ),
             b"!test-mid[2147483647] \\@ \\r\\n\\t\\e\\0\\\\\\_\n",
         ),
