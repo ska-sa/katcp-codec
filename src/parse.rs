@@ -16,7 +16,7 @@
 //! Parse katcp messages.
 
 use adjacent_pair_iterator::AdjacentPairIterator;
-use pyo3::buffer::{Element, PyBuffer, ReadOnlyCell};
+use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::{PyBufferError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -99,39 +99,18 @@ impl ParseError {
     }
 }
 
-/// Abstract read access to either T or [`ReadOnlyCell<T>`].
-pub trait ReadAccess<T: Copy>: Sized {
-    fn read(&self) -> T;
-}
-
-impl<T: Copy> ReadAccess<T> for T {
-    #[inline]
-    fn read(&self) -> T {
-        *self
-    }
-}
-
-impl<T: Element> ReadAccess<T> for ReadOnlyCell<T> {
-    #[inline]
-    fn read(&self) -> T {
-        self.get()
-    }
-}
-
 /// Iterator implementation for [Parser::append].
-pub struct ParseIterator<'parser, 'data, T>
+pub struct ParseIterator<'parser, 'data>
 where
     'data: 'parser,
-    T: ReadAccess<u8>,
 {
     parser: &'parser mut Parser,
-    data: &'data [T],
+    data: &'data [u8],
 }
 
-impl<'parser, 'data, T> Iterator for ParseIterator<'parser, 'data, T>
+impl<'parser, 'data> Iterator for ParseIterator<'parser, 'data>
 where
     'data: 'parser,
-    T: ReadAccess<u8>,
 {
     type Item = Result<Message, ParseError>;
 
@@ -224,10 +203,10 @@ impl Parser {
     /// `position` is the number of characters that appeared on the line
     /// prior to `chunk`. On the other hand, [Parser::line_length] includes
     /// the length of the chunk.
-    fn apply<T: ReadAccess<u8>>(
+    fn apply(
         &mut self,
         action: &Action,
-        chunk: &[T],
+        chunk: &[u8],
         position: usize,
     ) -> Result<Option<Message>, ParseError> {
         match action {
@@ -235,14 +214,14 @@ impl Parser {
                 self.mtype = Some(*mtype);
             }
             Action::Name => {
-                self.storage.extend(chunk.iter().map(T::read));
+                self.storage.extend_from_slice(chunk);
             }
             Action::Id => {
                 // TODO: optimise this using the whole chunk at once
                 for ch in chunk.iter() {
                     // Compute the update in 64-bit to detect overflow at the end
                     let mid = self.mid.unwrap_or(0) as u64;
-                    let mid = mid * 10 + ((ch.read() - b'0') as u64);
+                    let mid = mid * 10 + ((*ch - b'0') as u64);
                     if let Ok(value) = i32::try_from(mid) {
                         self.mid = Some(value as u32);
                     } else {
@@ -252,7 +231,7 @@ impl Parser {
                 }
             }
             Action::Argument => {
-                self.storage.extend(chunk.iter().map(T::read));
+                self.storage.extend_from_slice(chunk);
             }
             Action::ArgumentEscaped(c) => {
                 self.storage.push(*c);
@@ -289,16 +268,16 @@ impl Parser {
     }
 
     /// Consume data until new end-of-line is seen, returning the message if any.
-    fn next_message<'data, T: ReadAccess<u8>>(
+    fn next_message<'data>(
         &mut self,
-        mut data: &'data [T],
-    ) -> (Option<Result<Message, ParseError>>, &'data [T]) {
+        mut data: &'data [u8],
+    ) -> (Option<Result<Message, ParseError>>, &'data [u8]) {
         while !data.is_empty() {
             if self.line_length >= self.max_line_length && self.state != State::Error {
                 self.error("Line too long");
             }
 
-            let entry = &PARSER_TABLE[self.state][data[0].read()];
+            let entry = &PARSER_TABLE[self.state][data[0]];
             if entry.create_argument {
                 self.argument_start.push(self.storage.len());
             }
@@ -316,7 +295,7 @@ impl Parser {
                 // the compiler know that it doesn't need to check for out-of-bounds
                 // access inside the loop.
                 let capped = &data[..max_len];
-                while p < max_len && fast_table[capped[p].read()] {
+                while p < max_len && fast_table[capped[p]] {
                     p += 1;
                 }
             }
@@ -349,13 +328,12 @@ impl Parser {
     /// The data is only consumed as a result of iteration. Dropping the
     /// iterator without fully consuming it has undefined results.
     #[must_use = "Must consume the returned iterator for anything to happen"]
-    pub fn append<'parser, 'data, D, T>(
+    pub fn append<'parser, 'data, D>(
         &'parser mut self,
         data: &'data D,
-    ) -> ParseIterator<'parser, 'data, T>
+    ) -> ParseIterator<'parser, 'data>
     where
-        D: AsRef<[T]> + ?Sized,
-        T: ReadAccess<u8>,
+        D: AsRef<[u8]> + ?Sized,
     {
         ParseIterator {
             parser: self,
@@ -377,11 +355,18 @@ impl Parser {
         py: Python<'py>,
         buf: PyBuffer<u8>,
     ) -> PyResult<Bound<'py, PyList>> {
-        let slice = buf
-            .as_slice(py)
-            .ok_or_else(|| PyBufferError::new_err("Buffer object is not C-contiguous"))?;
+        if !buf.is_c_contiguous() {
+            return Err(PyBufferError::new_err("Buffer object is not C-contiguous"));
+        }
+        let results: Vec<_>;
+        // SAFETY: we hold the GIL, and do not call into Python until we've
+        // collected the results.
+        unsafe {
+            let data = std::slice::from_raw_parts(buf.buf_ptr() as *const u8, buf.item_count());
+            results = self.append(data).collect();
+        }
         let out = PyList::empty(py);
-        for result in self.append(slice) {
+        for result in results {
             match result {
                 Ok(msg) => {
                     out.append(msg)?;
