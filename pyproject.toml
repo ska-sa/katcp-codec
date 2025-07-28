@@ -30,6 +30,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: BSD License",
 ]
+dependencies = ["typing-extensions"]
 
 [project.urls]
 Homepage = "https://github.com/ska-sa/katcp-codec"
