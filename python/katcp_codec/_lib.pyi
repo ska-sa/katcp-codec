@@ -14,7 +14,7 @@
 # limitations under the License.
 ################################################################################
 
-from typing import Final, List, Optional, Union
+from typing import Final
 
 from typing_extensions import Buffer
 
@@ -29,22 +29,22 @@ class MessageType:
 class Message:
     mtype: MessageType
     name: bytes
-    mid: Optional[int]
-    arguments: List[bytes]
+    mid: int | None
+    arguments: list[bytes]
 
     # TODO: does it have to be List, or would Iterable work?
     def __init__(
         self,
         mtype: MessageType,
         name: bytes,
-        mid: Optional[int],
-        arguments: List[bytes],
+        mid: int | None,
+        arguments: list[bytes],
     ) -> None: ...
     def __bytes__(self) -> bytes: ...
 
 class Parser:
     def __init__(self, max_line_length: int) -> None: ...
-    def append(self, data: Buffer) -> List[Union[Message, ValueError]]: ...
+    def append(self, data: Buffer) -> list[Message | ValueError]: ...
     def reset(self) -> None: ...
     @property
     def buffer_size(self) -> int: ...
