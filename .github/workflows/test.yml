@@ -4,7 +4,7 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 env:
-  RUST_VERSION: '1.76.0'
+  RUST_VERSION: '1.88.0'
   MIN_PYTHON_VERSION: '3.8'
   MAX_PYTHON_VERSION: '3.12'
 jobs:
@@ -125,6 +125,8 @@ jobs:
       matrix:
         arch: [x86_64, arm64]
         python: [cp38]  # Using limited ABI, so newer versions are not required
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "10.12"  # Seems to be needed due to Rust version
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
