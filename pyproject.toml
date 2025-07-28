@@ -52,9 +52,20 @@ target = "katcp_codec._lib"
 debug = false
 strip = "All"
 
-[tool.isort]
-profile = "black"
-known_first_party = ["katcp_codec"]
+[tool.ruff]
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "UP",      # pyupgrade
+    "RUF100",  # Unnecessary noqa directives
+]
+[tool.ruff.lint.isort]
+
+known-first-party = ["katcp_codec"]
 
 [tool.mypy]
 python_version = "3.8"
