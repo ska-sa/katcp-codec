@@ -42,6 +42,8 @@ tomli==2.2.1
     # via
     #   build
     #   pytest
+typing-extensions==4.13.2
+    # via katcp-codec (pyproject.toml)
 virtualenv==20.28.1
     # via pre-commit
 zipp==3.20.2

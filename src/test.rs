@@ -17,8 +17,9 @@
 
 use proptest::prelude::*;
 
-use crate::message::{Message, MessageType};
-use crate::parse::Parser;
+use crate::format::Message as FormatMessage;
+use crate::message::MessageType;
+use crate::parse::{Message as ParseMessage, Parser};
 
 pub(crate) fn mtype_strategy() -> impl Strategy<Value = MessageType> {
     prop_oneof![
@@ -44,6 +45,21 @@ pub(crate) fn text_message_strategy() -> impl Strategy<Value = String> {
     r"[?!#][A-Za-z][-A-Za-z0-9]*(?:\[[1-9][0-9]{7}\])?(?:[ \t]+(?:[^\x00\x1B\r\n \t\\]|\\[rnet0_\\])+)*[ \t]*[\r\n]"
 }
 
+impl<N, A> PartialEq<FormatMessage<N, A>> for ParseMessage
+where
+    N: AsRef<[u8]>,
+    A: AsRef<[u8]>,
+{
+    fn eq(&self, other: &FormatMessage<N, A>) -> bool {
+        self.mtype == other.mtype
+            && self.name() == other.name.as_ref()
+            && self.mid == other.mid
+            && self
+                .arguments()
+                .eq(other.arguments.iter().map(|x| x.as_ref()))
+    }
+}
+
 proptest! {
     /// Test that formatting a message then reparsing it gives the original message
     #[test]
@@ -54,7 +70,7 @@ proptest! {
         arguments in arguments_strategy()
     )
     {
-        let message: Message<Vec<u8>, Vec<u8>> = Message::new(mtype, name, mid, arguments);
+        let message: FormatMessage<Vec<u8>, Vec<u8>> = FormatMessage::new(mtype, name, mid, arguments);
         let encoded = message.to_vec();
         let mut parser = Parser::new(1000000000);
         let decoded: Vec<_> = parser.append(&encoded).collect();

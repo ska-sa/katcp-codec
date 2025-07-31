@@ -19,6 +19,8 @@ import re
 from dataclasses import InitVar, dataclass, field
 from typing import List, Optional, Union
 
+from typing_extensions import Buffer
+
 from . import _lib
 
 _NAME_RE = re.compile(b"[A-Za-z][-A-Za-z0-9]*")
@@ -121,7 +123,7 @@ class Parser:
     def __init__(self, max_line_length: int) -> None:
         self._parser = _lib.Parser(max_line_length)
 
-    def append(self, data: bytes) -> List[Union[Message, ValueError]]:
+    def append(self, data: Buffer) -> List[Union[Message, ValueError]]:
         """Append new data to the parser.
 
         Returns

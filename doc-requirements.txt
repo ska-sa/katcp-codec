@@ -60,6 +60,8 @@ sphinxcontrib-serializinghtml==1.1.5
     # via sphinx
 sphinxcontrib-tikz==0.4.20
     # via katcp-codec (pyproject.toml)
+typing-extensions==4.13.2
+    # via katcp-codec (pyproject.toml)
 urllib3==2.2.3
     # via requests
 zipp==3.20.2
