@@ -20,15 +20,13 @@ repos:
         args: []
         additional_dependencies:
           - pytest==8.3.5
-  - repo: https://github.com/jazzband/pip-tools
-    rev: 7.4.1
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.8.5
     hooks:
       - id: pip-compile
-        language_version: python3.8
-        args: ["--output-file=requirements.txt", "--extra=dev", "--strip-extras", "pyproject.toml"]
+        args: ["--output-file=requirements.txt", "--python-version=3.8", "--extra=dev", "pyproject.toml"]
         files: '^(pyproject\.toml|requirements\.txt)$'
       - id: pip-compile
         name: pip-compile doc-requirements
-        language_version: python3.8
-        args: ["--output-file=doc-requirements.txt", "--extra=doc", "--strip-extras", "pyproject.toml"]
+        args: ["--output-file=doc-requirements.txt", "--python-version=3.8", "--extra=doc", "pyproject.toml"]
         files: '^(pyproject\.toml|doc-requirements\.txt)$'
