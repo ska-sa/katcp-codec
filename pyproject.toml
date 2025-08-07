@@ -26,6 +26,8 @@ description = "Fast encoding and decoding of katcp messages"
 readme = "README.md"
 requires-python = ">=3.8"
 keywords = ["katcp"]
+# TODO: replace license classifier with PEP 639 metadata once Python 3.8
+# support is dropped.
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: BSD License",
@@ -52,9 +54,20 @@ target = "katcp_codec._lib"
 debug = false
 strip = "All"
 
-[tool.isort]
-profile = "black"
-known_first_party = ["katcp_codec"]
+[tool.ruff]
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "UP",      # pyupgrade
+    "RUF100",  # Unnecessary noqa directives
+]
+[tool.ruff.lint.isort]
+
+known-first-party = ["katcp_codec"]
 
 [tool.mypy]
 python_version = "3.8"
