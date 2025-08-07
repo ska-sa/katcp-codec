@@ -14,8 +14,10 @@
  */
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
-use _lib::message::{Message, MessageType};
+use _lib::format::Message as FormatMessage;
+use _lib::message::MessageType;
 use _lib::parse::Parser;
 
 fn parse(c: &mut Criterion) {
@@ -27,7 +29,7 @@ fn parse(c: &mut Criterion) {
             b"123.4567890:123.45678901".as_slice()
         };
         for args in [1, 10, 100, 1000, 10000] {
-            let msg: Message<&[u8], &[u8]> = Message::new(
+            let msg: FormatMessage<&[u8], &[u8]> = FormatMessage::new(
                 MessageType::Request,
                 b"test-message".as_slice(),
                 Some(12345678),
@@ -38,7 +40,7 @@ fn parse(c: &mut Criterion) {
             group.throughput(Throughput::Bytes(encoded.len() as u64));
             let name = if escapes { "escapes" } else { "no escapes" };
             group.bench_function(BenchmarkId::new(name, args), |b| {
-                b.iter(|| parser.append(&encoded).count());
+                b.iter(|| black_box(parser.append(black_box(&encoded))).count());
             });
         }
     }

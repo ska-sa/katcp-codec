@@ -51,8 +51,11 @@ def parser(max_line_length) -> Parser:
         ),
     ],
 )
-def test_success(parser: Parser, data: bytes, messages: List[Message]) -> None:
-    assert parser.append(data) == messages
+@pytest.mark.parametrize("type_", [bytes, memoryview])
+def test_success(
+    parser: Parser, data: bytes, messages: List[Message], type_: type
+) -> None:
+    assert parser.append(type_(data)) == messages
 
 
 def test_buffer_size(parser: Parser) -> None:

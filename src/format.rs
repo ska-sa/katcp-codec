@@ -13,11 +13,13 @@
  * limitations under the License.
  */
 
+//! Format katcp messages.
+
 use std::ops::AddAssign;
 use uninit::prelude::*;
 
-use crate::message::{Message, MessageType};
 use crate::tables::{ESCAPE_FLAG, ESCAPE_SYMBOL};
+use katcp_codec_fsm::MessageType;
 
 // Accumulator that panics on overflow
 struct Accumulator(usize);
@@ -31,11 +33,53 @@ impl AddAssign<usize> for Accumulator {
     }
 }
 
+/// A katcp message. The name and arguments can either own their data or
+/// reference existing data from a buffer.
+///
+/// The katcp specification is byte-oriented, so the text fields are \[u8\]
+/// rather than [str]. The name has a restricted character set that ensures
+/// it can be decoded as ASCII (or UTF-8) but the arguments may contain
+/// arbitrary bytes.
+///
+/// The message ID and name are *not* validated when constructed with
+/// [Message::new]. Using an invalid value for either will not panic, but
+/// will lead to invalid formatting from [Message::write_out].
+#[derive(Clone, Debug)]
+pub struct Message<N, A>
+where
+    N: AsRef<[u8]>,
+    A: AsRef<[u8]>,
+{
+    /// Message type
+    pub mtype: MessageType,
+    /// Message name
+    pub name: N,
+    /// Message ID, if present. It must be positive.
+    pub mid: Option<u32>,
+    /// Message arguments
+    pub arguments: Vec<A>,
+}
+
 impl<N, A> Message<N, A>
 where
     N: AsRef<[u8]>,
     A: AsRef<[u8]>,
 {
+    /// Create a new message.
+    pub fn new(
+        mtype: MessageType,
+        name: impl Into<N>,
+        mid: Option<u32>,
+        arguments: impl Into<Vec<A>>,
+    ) -> Self {
+        Self {
+            mtype,
+            name: name.into(),
+            mid,
+            arguments: arguments.into(),
+        }
+    }
+
     fn type_symbol(mtype: MessageType) -> u8 {
         match mtype {
             MessageType::Request => b'?',
