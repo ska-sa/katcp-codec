@@ -28,5 +28,5 @@ repos:
         files: '^(pyproject\.toml|requirements\.txt)$'
       - id: pip-compile
         name: pip-compile doc-requirements
-        args: ["--output-file=doc-requirements.txt", "--python-version=3.8", "--extra=doc", "pyproject.toml"]
+        args: ["--output-file=doc-requirements.txt", "--python-version=3.12", "--extra=doc", "pyproject.toml"]
         files: '^(pyproject\.toml|doc-requirements\.txt)$'
