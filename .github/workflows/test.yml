@@ -113,7 +113,7 @@ jobs:
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_BUILD: ${{ matrix.python }}-manylinux*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: wheel_linux-${{ matrix.arch }}-${{ matrix.python }}
           path: ./wheelhouse/*.whl
@@ -149,7 +149,7 @@ jobs:
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_BUILD: ${{ matrix.python }}-macos*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: wheel_macos-${{ matrix.arch }}-${{ matrix.python }}
           path: ./wheelhouse/*.whl
@@ -168,7 +168,7 @@ jobs:
         run: pip install -c requirements.txt build
       - name: build sdist
         run: python -m build --sdist .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sdist
           path: ./dist/*.tar.gz
@@ -189,7 +189,7 @@ jobs:
           name: sdist
           path: dist/
           merge-multiple: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: release
           path: |
