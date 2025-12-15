@@ -179,12 +179,12 @@ jobs:
     steps:
       - name: Create paths
         run: mkdir -p dist wheelhouse
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           pattern: wheel_*
           path: wheelhouse/
           merge-multiple: true
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: sdist
           path: dist/
