@@ -56,5 +56,5 @@ sphinxcontrib-tikz==0.4.20
     # via katcp-codec (pyproject.toml)
 typing-extensions==4.14.1
     # via katcp-codec (pyproject.toml)
-urllib3==2.5.0
+urllib3==2.6.2
     # via requests
