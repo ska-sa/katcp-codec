@@ -24,7 +24,7 @@ repos:
     rev: 0.9.8
     hooks:
       - id: pip-compile
-        args: ["--output-file=requirements.txt", "--python-version=3.8", "--extra=dev", "pyproject.toml"]
+        args: ["--output-file=requirements.txt", "--python-version=3.8", "--universal", "--extra=dev", "pyproject.toml"]
         files: '^(pyproject\.toml|requirements\.txt)$'
       - id: pip-compile
         name: pip-compile doc-requirements
