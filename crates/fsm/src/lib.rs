@@ -18,7 +18,12 @@ use enum_map::Enum;
 /// Type of katcp message
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(module = "katcp_codec._lib", rename_all = "SCREAMING_SNAKE_CASE", eq)
+    pyo3::pyclass(
+        module = "katcp_codec._lib",
+        rename_all = "SCREAMING_SNAKE_CASE",
+        eq,
+        from_py_object
+    )
 )]
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum MessageType {
