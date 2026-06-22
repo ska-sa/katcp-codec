@@ -1,6 +1,11 @@
 Changelog
 =========
 
+0.2.1
+-----
+- Update dependencies. No changes to katcp-codec itself.
+- Include Python 3.13 and 3.14 in CI.
+
 0.2.0
 -----
 - Support buffer objects in :meth:`.Parser.append`. As a result, separate
