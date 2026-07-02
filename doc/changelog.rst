@@ -1,6 +1,11 @@
 Changelog
 =========
 
+0.2.2
+-----
+- Update dependencies of internal ``fsm`` crate (which were missed in the
+  0.2.1 release). No changes to katcp-codec itself.
+
 0.2.1
 -----
 - Update dependencies. No changes to katcp-codec itself.
