@@ -4,7 +4,7 @@ alabaster==1.0.0
     # via sphinx
 babel==2.17.0
     # via sphinx
-certifi==2025.8.3
+certifi==2026.10.23
     # via requests
 charset-normalizer==3.4.3
     # via requests
@@ -56,5 +56,5 @@ sphinxcontrib-tikz==0.4.20
     # via katcp-codec (pyproject.toml)
 typing-extensions==4.14.1
     # via katcp-codec (pyproject.toml)
-urllib3==2.6.3
+urllib3==2.8.0
     # via requests
