@@ -5,12 +5,12 @@ repos:
       - id: fmt
       - id: clippy
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.2
+    rev: v0.17.3
     hooks:
       - id: ruff-check
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v2.4.1
     hooks:
       - id: mypy
         # Passing filenames to mypy can do odd things.
@@ -19,9 +19,9 @@ repos:
         # The pre-commit hook passes some options, but we set options in pyproject.toml.
         args: []
         additional_dependencies:
-          - pytest==8.3.5
+          - pytest==9.2.0
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.8
+    rev: 0.13.7
     hooks:
       - id: pip-compile
         args: ["--output-file=requirements.txt", "--python-version=3.10", "--universal", "--extra=dev", "pyproject.toml"]
