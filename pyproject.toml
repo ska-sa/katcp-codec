@@ -67,6 +67,7 @@ known-first-party = ["katcp_codec"]
 [tool.mypy]
 python_version = "3.10"
 files = "python"
+warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 # The Rust module doesn't have type hints
