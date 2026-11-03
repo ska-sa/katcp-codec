@@ -17,7 +17,6 @@
 import enum
 import re
 from dataclasses import InitVar, dataclass, field
-from typing import List, Optional, Union
 
 from typing_extensions import Buffer
 
@@ -63,9 +62,9 @@ class Message:
     #: Message name (must start with [A-Za-z] and contain only [A-Za-z0-9-])
     name: bytes
     #: Message ID (if specified, must be positive and less than 2**31)
-    mid: Optional[int]
+    mid: int | None
     #: Message arguments
-    arguments: List[bytes]
+    arguments: list[bytes]
     #: If false, skip validating the name and message ID. This should only be
     #: done if they've already been checked, as the behaviour is undefined if
     #: they're invalid.
@@ -85,8 +84,8 @@ class Message:
 
 
 def _message_from_rust(
-    message: Union[_lib.Message, ValueError],
-) -> Union[Message, ValueError]:
+    message: _lib.Message | ValueError,
+) -> Message | ValueError:
     if isinstance(message, ValueError):
         return message
     else:
@@ -123,7 +122,7 @@ class Parser:
     def __init__(self, max_line_length: int) -> None:
         self._parser = _lib.Parser(max_line_length)
 
-    def append(self, data: Buffer) -> List[Union[Message, ValueError]]:
+    def append(self, data: Buffer) -> list[Message | ValueError]:
         """Append new data to the parser.
 
         Returns
