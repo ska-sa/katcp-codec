@@ -41,7 +41,7 @@ _MESSAGE_TYPE_MAP = {
 }
 
 
-@dataclass
+@dataclass(slots=True)
 class Message:
     """A katcp message.
 
@@ -52,10 +52,6 @@ class Message:
     ValueError
         if the name does not conform to the specification
     """
-
-    # Python 3.8 doesn't support the `slots=True` parameter to dataclass, so
-    # we have to specify the slots manually.
-    __slots__ = ["mtype", "name", "mid", "arguments"]
 
     #: Message type
     mtype: MessageType
