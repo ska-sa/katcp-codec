@@ -23,7 +23,7 @@ build:
     - pdf2svg  # For sphinxcontrib-tikz
   tools:
     python: "3.12"
-    rust: "1.99.1"
+    rust: "1.96"
 
 python:
   install:
