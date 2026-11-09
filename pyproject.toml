@@ -15,7 +15,7 @@
 ################################################################################
 
 [build-system]
-requires = ["setuptools", "setuptools-rust", "setuptools-scm"]
+requires = ["setuptools>=80", "setuptools-rust", "setuptools-scm[simple]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -35,7 +35,7 @@ dependencies = ["typing-extensions"]
 [project.urls]
 Homepage = "https://github.com/ska-sa/katcp-codec"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = ["pre-commit", "pytest", "build"]
 doc = ["sphinx", "sphinxcontrib-tikz", "sphinx-rtd-theme"]
 
@@ -43,9 +43,6 @@ doc = ["sphinx", "sphinxcontrib-tikz", "sphinx-rtd-theme"]
 # Pure Python packages/modules
 where = ["python"]
 include = ["katcp_codec*"]
-
-[tool.setuptools_scm]
-# This section is needed to have setuptools_scm provide the version
 
 [[tool.setuptools-rust.ext-modules]]
 target = "katcp_codec._lib"

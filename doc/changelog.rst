@@ -1,6 +1,15 @@
 Changelog
 =========
 
+0.3.0
+-----
+- Drop support for Python versions older than 3.10.
+- Test on Python 3.15.
+- Update CI/CD to use newer versions of Ubuntu, MacOS, Rust and dependency
+  packages.
+- Update pre-commit hooks to latest versions.
+- Replace optional dependencies with :pep:`735` dependency groups.
+
 0.2.2
 -----
 - Update dependencies of internal ``fsm`` crate (which were missed in the
