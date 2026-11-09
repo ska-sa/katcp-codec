@@ -18,12 +18,12 @@ version: 2
 sphinx:
   configuration: doc/conf.py
 build:
-  os: ubuntu-24.04
+  os: ubuntu-26.04
   apt_packages:
     - pdf2svg  # For sphinxcontrib-tikz
   tools:
     python: "3.12"
-    rust: "1.86"
+    rust: "1.99.1"
 
 python:
   install:
