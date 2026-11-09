@@ -14,7 +14,6 @@
 # limitations under the License.
 ################################################################################
 
-from typing import List
 
 import pytest
 
@@ -53,7 +52,7 @@ def parser(max_line_length) -> Parser:
 )
 @pytest.mark.parametrize("type_", [bytes, memoryview])
 def test_success(
-    parser: Parser, data: bytes, messages: List[Message], type_: type
+    parser: Parser, data: bytes, messages: list[Message], type_: type
 ) -> None:
     assert parser.append(type_(data)) == messages
 

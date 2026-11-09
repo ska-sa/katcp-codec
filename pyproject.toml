@@ -24,13 +24,11 @@ dynamic = ["version"]
 authors = [{name = "Bruce Merry", email = "bmerry@sarao.ac.za"}]
 description = "Fast encoding and decoding of katcp messages"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 keywords = ["katcp"]
-# TODO: replace license classifier with PEP 639 metadata once Python 3.8
-# support is dropped.
+license = "BSD-3-Clause"
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: BSD License",
+    "Development Status :: 5 - Production/Stable",
 ]
 dependencies = ["typing-extensions"]
 
@@ -54,9 +52,6 @@ target = "katcp_codec._lib"
 debug = false
 strip = "All"
 
-[tool.ruff]
-target-version = "py38"
-
 [tool.ruff.lint]
 select = [
     "E", "W",  # pycodestyle
@@ -70,8 +65,9 @@ select = [
 known-first-party = ["katcp_codec"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 files = "python"
+warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 # The Rust module doesn't have type hints

@@ -4,12 +4,12 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 env:
-  RUST_VERSION: '1.96.0'
-  MIN_PYTHON_VERSION: '3.8'
-  MAX_PYTHON_VERSION: '3.14'
+  RUST_VERSION: '1.99.1'
+  MIN_PYTHON_VERSION: '3.10'
+  MAX_PYTHON_VERSION: '3.15'
 jobs:
   pre-commit:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -27,7 +27,7 @@ jobs:
         run: pre-commit run --all-files
 
   docs:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -49,7 +49,7 @@ jobs:
         run: SPHINX_OPTS="-W --keep-going" make -C doc html
 
   rust-tests:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -68,8 +68,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
-    runs-on: ubuntu-24.04
+        python: ['3.10', '3.11', '3.12', '3.13', '3.14', '3.15']
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -93,13 +93,13 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x86_64, aarch64]
-        python: [cp38, cp39, cp310, cp311]  # From 3.11 we can use the limited ABI
+        python: [cp310, cp311]  # From 3.11 we can use the limited ABI
         # Set os based on arch
         include:
           - arch: x86_64
-            os: ubuntu-24.04
+            os: ubuntu-26.04
           - arch: aarch64
-            os: ubuntu-24.04-arm
+            os: ubuntu-26.04-arm
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -124,10 +124,10 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x86_64, arm64]
-        python: [cp38, cp39, cp310, cp311]  # From 3.11 we can use the limited ABI
+        python: [cp310, cp311]  # From 3.11 we can use the limited ABI
     env:
       MACOSX_DEPLOYMENT_TARGET: "10.12"  # Seems to be needed due to Rust version
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
         with:
@@ -145,7 +145,7 @@ jobs:
           cache: 'pip'
       - name: Install pipx
         run: pip install pipx
-      - uses: pypa/cibuildwheel@v3.4.0
+      - uses: pypa/cibuildwheel@v4.3.5
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_BUILD: ${{ matrix.python }}-macos*
@@ -155,7 +155,7 @@ jobs:
           path: ./wheelhouse/*.whl
 
   sdist:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -175,7 +175,7 @@ jobs:
 
   combine-wheels:
     needs: [linux-wheels, macos-wheels, sdist]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Create paths
         run: mkdir -p dist wheelhouse
