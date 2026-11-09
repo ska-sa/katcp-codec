@@ -35,7 +35,7 @@ dependencies = ["typing-extensions"]
 [project.urls]
 Homepage = "https://github.com/ska-sa/katcp-codec"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = ["pre-commit", "pytest", "build"]
 doc = ["sphinx", "sphinxcontrib-tikz", "sphinx-rtd-theme"]
 
