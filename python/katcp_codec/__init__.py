@@ -123,7 +123,7 @@ class Parser:
 
         Returns
         -------
-        messages
+        list[Message | ValueError]
             Messages whose end was in the input data. Each message is either
             an instance of :class:`Message` if it was valid or
             :exc:`ValueError` if not.
