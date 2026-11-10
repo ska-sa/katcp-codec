@@ -74,7 +74,7 @@ Acceleration
 ^^^^^^^^^^^^
 Using a state machine makes it quite straightforward to build up a message
 incrementally. Unfortunately, the initial implementation was quite slow,
-because character of the message are appended to the storage one byte at a
+because characters of the message are appended to the storage one byte at a
 time. An acceleration mechanism allows the input to be processed in chunks.
 After taking one transition in the state machine, we scan over following
 characters to find a maximal chunk that can be processed in one step. For
@@ -113,7 +113,7 @@ Build-time table generation
 The state tables are generated programmatically, but it could be expensive to
 do so each time a Parser is instantiated. Instead, a Rust build script is used
 to generate the tables at build time, and format them as Rust source code. The
-generated code is included into file:`src/tables.rs`.
+generated code is included into :file:`src/tables.rs`.
 
 This introduces a complication in that the build script and the run-time parser
 need to share the State and Action enums. That's implemented by using a Cargo
